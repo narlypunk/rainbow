@@ -7,16 +7,20 @@ import TouchableBackdrop from '../components/TouchableBackdrop';
 import {
   ChartExpandedState,
   LiquidityPoolExpandedState,
+  SwapDetailsState,
+  TokenIndexExpandedState,
   UniqueTokenExpandedState,
 } from '../components/expanded-state';
 import { Centered } from '../components/layout';
-import { useTheme } from '../context/ThemeContext';
-import { useAsset, useDimensions } from '../hooks';
-import { useNavigation } from '../navigation/Navigation';
+import { useTheme } from '@rainbow-me/context';
+import { useAsset, useDimensions } from '@rainbow-me/hooks';
+import { useNavigation } from '@rainbow-me/navigation';
 import { position } from '@rainbow-me/styles';
 
 const ScreenTypes = {
+  swap_details: SwapDetailsState,
   token: ChartExpandedState,
+  token_index: TokenIndexExpandedState,
   unique_token: UniqueTokenExpandedState,
   uniswap: LiquidityPoolExpandedState,
 };
@@ -44,10 +48,13 @@ export default function ExpandedAssetSheet(props) {
       height={params.longFormHeight}
       insets={insets}
     >
-      {ios && !isDarkMode && <StatusBar barStyle="light-content" />}
+      {ios && !isDarkMode && !params.fromDiscover && (
+        <StatusBar barStyle="light-content" />
+      )}
       {ios && <TouchableBackdrop onPress={goBack} />}
       {createElement(ScreenTypes[params.type], {
         asset: selectedAsset,
+        ...params,
         ...props,
       })}
     </Container>

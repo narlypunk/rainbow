@@ -12,6 +12,47 @@ and this project adheres to [Semantic Versioning](http://semver.org/)
 
 ### Removed
 
+## [1.5.1](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.1)
+
+### Changed
+* Typescript Transaction Parser
+* Bug Fixes
+
+## [1.5.0](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.0)
+
+### Added
+* Discover Page
+
+### Changed
+* RecyclerView Refactor 
+* Performance Improvements
+
+## [1.2.58](https://github.com/rainbow-me/rainbow/releases/tag/v1.2.58)
+
+### Changed
+* Multimedia NFT Image Fallback
+* Reanimated Fix
+* UI Tweaks
+
+## [1.2.57](https://github.com/rainbow-me/rainbow/releases/tag/v1.2.57)
+
+### Added
+* Multimedia NFT support
+
+### Changed
+* Fix Lingering Pools 
+* Bug Fixes
+
+## [1.2.55](https://github.com/rainbow-me/rainbow/releases/tag/v1.2.55)
+
+### Added
+* Swap Details Sheet
+* Flip button
+
+### Changed
+* Fix Testnets
+* Bug Fixes
+
 ## [1.2.54](https://github.com/rainbow-me/rainbow/releases/tag/v1.2.54)
 
 ### Changed

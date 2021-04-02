@@ -35,7 +35,9 @@ import Routes from '@rainbow-me/routes';
 import { position } from '@rainbow-me/styles';
 
 export const SavingsSheetEmptyHeight = 313;
-export const SavingsSheetHeight = android ? 424 - getSoftMenuBarHeight() : 352;
+export const SavingsSheetHeight = android
+  ? 424 - getSoftMenuBarHeight() / 2
+  : 352;
 
 const Container = styled(Centered).attrs({ direction: 'column' })`
   ${position.cover};
@@ -55,7 +57,6 @@ const SavingsSheet = () => {
   const isEmpty = params['isEmpty'];
   const underlyingBalanceNativeValue = params['underlyingBalanceNativeValue'];
   const underlying = params['underlying'];
-  const underlyingPrice = params['underlyingPrice'];
   const lifetimeSupplyInterestAccrued = params['lifetimeSupplyInterestAccrued'];
   const lifetimeSupplyInterestAccruedNative =
     params['lifetimeSupplyInterestAccruedNative'];
@@ -104,7 +105,6 @@ const SavingsSheet = () => {
         cTokenBalance,
         defaultInputAsset: underlying,
         supplyBalanceUnderlying,
-        underlyingPrice,
       });
 
       analytics.track('Navigated to SavingsWithdrawModal', {
@@ -120,7 +120,6 @@ const SavingsSheet = () => {
     navigate,
     supplyBalanceUnderlying,
     underlying,
-    underlyingPrice,
   ]);
 
   const onDeposit = useCallback(() => {
@@ -129,7 +128,6 @@ const SavingsSheet = () => {
         params: {
           params: {
             defaultInputAsset: underlying,
-            underlyingPrice,
           },
           screen: Routes.MAIN_EXCHANGE_SCREEN,
         },
@@ -144,7 +142,7 @@ const SavingsSheet = () => {
     } else {
       Alert.alert(`You need to import the wallet in order to do this`);
     }
-  }, [isEmpty, isReadOnlyWallet, navigate, underlying, underlyingPrice]);
+  }, [isEmpty, isReadOnlyWallet, navigate, underlying]);
 
   return (
     <Container

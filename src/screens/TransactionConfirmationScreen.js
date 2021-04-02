@@ -2,7 +2,7 @@ import { useRoute } from '@react-navigation/native';
 import analytics from '@segment/analytics-react-native';
 import BigNumber from 'bignumber.js';
 import lang from 'i18n-js';
-import { get, isEmpty, isNil, omit } from 'lodash';
+import { isEmpty, isNil, omit } from 'lodash';
 import React, {
   useCallback,
   useEffect,
@@ -10,12 +10,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {
-  Alert,
-  InteractionManager,
-  TurboModuleRegistry,
-  Vibration,
-} from 'react-native';
+import { Alert, InteractionManager, Vibration } from 'react-native';
 import { isEmulatorSync } from 'react-native-device-info';
 import Animated, {
   useAnimatedStyle,
@@ -34,6 +29,7 @@ import {
   SheetActionButton,
   SheetActionButtonRow,
   SheetHandleFixedToTop,
+  SheetKeyboardAnimation,
   SlackSheet,
 } from '../components/sheet';
 import { Text } from '../components/text';
@@ -42,7 +38,34 @@ import {
   MessageSigningSection,
   TransactionConfirmationSection,
 } from '../components/transaction';
-import { isDappAuthenticated } from '../helpers/dappNameHandler';
+import {
+  estimateGas,
+  estimateGasWithPadding,
+  toHex,
+} from '@rainbow-me/handlers/web3';
+import { isDappAuthenticated } from '@rainbow-me/helpers/dappNameHandler';
+import {
+  useAccountAssets,
+  useAccountProfile,
+  useAccountSettings,
+  useBooleanState,
+  useDimensions,
+  useGas,
+  useKeyboardHeight,
+  useTransactionConfirmation,
+  useWalletBalances,
+  useWallets,
+} from '@rainbow-me/hooks';
+import {
+  sendTransaction,
+  signMessage,
+  signPersonalMessage,
+  signTransaction,
+  signTypedDataMessage,
+} from '@rainbow-me/model/wallet';
+import { useNavigation } from '@rainbow-me/navigation';
+import { walletConnectRemovePendingRedirect } from '@rainbow-me/redux/walletconnect';
+import { padding } from '@rainbow-me/styles';
 import {
   convertAmountToNativeDisplay,
   convertHexToString,
@@ -50,17 +73,9 @@ import {
   greaterThan,
   greaterThanOrEqualTo,
   multiply,
-} from '../helpers/utilities';
-import {
-  sendTransaction,
-  signMessage,
-  signPersonalMessage,
-  signTransaction,
-  signTypedDataMessage,
-} from '../model/wallet';
-import { walletConnectRemovePendingRedirect } from '../redux/walletconnect';
-import { ethereumUtils, safeAreaInsetValues } from '../utils';
-import { methodRegistryLookupAndParse } from '../utils/methodRegistry';
+} from '@rainbow-me/utilities';
+import { ethereumUtils, safeAreaInsetValues } from '@rainbow-me/utils';
+import { methodRegistryLookupAndParse } from '@rainbow-me/utils/methodRegistry';
 import {
   isMessageDisplayType,
   isSignFirstParamType,
@@ -70,31 +85,8 @@ import {
   SEND_TRANSACTION,
   SIGN,
   SIGN_TYPED_DATA,
-} from '../utils/signingMethods';
-import {
-  estimateGas,
-  estimateGasWithPadding,
-  toHex,
-} from '@rainbow-me/handlers/web3';
-import {
-  useAccountAssets,
-  useAccountProfile,
-  useAccountSettings,
-  useDimensions,
-  useGas,
-  useKeyboardHeight,
-  useTransactionConfirmation,
-  useWalletBalances,
-  useWallets,
-} from '@rainbow-me/hooks';
-import { useNavigation } from '@rainbow-me/navigation';
-import { padding } from '@rainbow-me/styles';
+} from '@rainbow-me/utils/signingMethods';
 import logger from 'logger';
-
-const isReanimatedAvailable = !(
-  !TurboModuleRegistry.get('NativeReanimated') &&
-  (!global.__reanimatedModuleProxy || global.__reanimatedModuleProxy.__shimmed)
-);
 
 const springConfig = {
   damping: 500,
@@ -120,8 +112,9 @@ const Container = styled(Column)`
 const AnimatedContainer = Animated.createAnimatedComponent(Container);
 const AnimatedSheet = Animated.createAnimatedComponent(Centered);
 
-const GasSpeedButtonContainer = styled(Column)`
-  justify-content: flex-start;
+const GasSpeedButtonContainer = styled(Column).attrs({
+  justify: 'start',
+})`
   margin-bottom: 19px;
 `;
 
@@ -146,11 +139,11 @@ const WalletText = styled(Text).attrs(
 
 const NOOP = () => undefined;
 
-const TransactionConfirmationScreen = () => {
+export default function TransactionConfirmationScreen() {
   const { colors } = useTheme();
   const { allAssets } = useAccountAssets();
   const [isAuthorizing, setIsAuthorizing] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [isKeyboardVisible, showKeyboard, hideKeyboard] = useBooleanState();
   const [methodName, setMethodName] = useState(null);
   const calculatingGasLimit = useRef(false);
   const [isBalanceEnough, setIsBalanceEnough] = useState(true);
@@ -328,7 +321,7 @@ const TransactionConfirmationScreen = () => {
 
   const calculateGasLimit = useCallback(async () => {
     calculatingGasLimit.current = true;
-    const txPayload = get(params, '[0]');
+    const txPayload = params?.[0];
     // use the default
     let gas = txPayload.gasLimit || txPayload.gas;
     try {
@@ -386,15 +379,15 @@ const TransactionConfirmationScreen = () => {
       return;
     }
     // Get the TX fee Amount
-    const txFeeAmount = fromWei(get(txFee, 'value.amount', 0));
+    const txFeeAmount = fromWei(txFee?.value?.amount ?? 0);
 
     // Get the ETH balance
     const ethAsset = ethereumUtils.getAsset(allAssets);
-    const balanceAmount = get(ethAsset, 'balance.amount', 0);
+    const balanceAmount = ethAsset?.balance?.amount ?? 0;
 
     // Get the TX value
-    const txPayload = get(params, '[0]');
-    const value = get(txPayload, 'value', 0);
+    const txPayload = params?.[0];
+    const value = txPayload?.value ?? 0;
 
     // Check that there's enough ETH to pay for everything!
     const totalAmount = BigNumber(fromWei(value)).plus(txFeeAmount);
@@ -413,10 +406,10 @@ const TransactionConfirmationScreen = () => {
 
   const handleConfirmTransaction = useCallback(async () => {
     const sendInsteadOfSign = method === SEND_TRANSACTION;
-    const txPayload = get(params, '[0]');
+    const txPayload = params?.[0];
     let { gas, gasLimit: gasLimitFromPayload, gasPrice } = txPayload;
 
-    const rawGasPrice = get(selectedGasPrice, 'value.amount');
+    const rawGasPrice = selectedGasPrice?.value?.amount;
     if (rawGasPrice) {
       gasPrice = toHex(rawGasPrice);
     }
@@ -480,15 +473,15 @@ const TransactionConfirmationScreen = () => {
       }
       if (sendInsteadOfSign) {
         const txDetails = {
-          amount: get(displayDetails, 'request.value'),
-          asset: get(displayDetails, 'request.asset'),
+          amount: displayDetails?.request?.value ?? 0,
+          asset: displayDetails?.request?.asset,
           dappName,
-          from: get(displayDetails, 'request.from'),
+          from: displayDetails?.request?.from,
           gasLimit,
           gasPrice,
           hash: result.hash,
           nonce: result.nonce,
-          to: get(displayDetails, 'request.to'),
+          to: displayDetails?.request?.to,
         };
 
         dispatch(dataAddNewTransaction(txDetails));
@@ -524,9 +517,9 @@ const TransactionConfirmationScreen = () => {
     let message = null;
     let flatFormatSignature = null;
     if (isSignFirstParamType(method)) {
-      message = get(params, '[0]');
+      message = params?.[0];
     } else if (isSignSecondParamType(method)) {
-      message = get(params, '[1]');
+      message = params?.[1];
     }
     switch (method) {
       case SIGN:
@@ -654,9 +647,9 @@ const TransactionConfirmationScreen = () => {
       );
     }
 
-    if (isTransactionDisplayType(method) && get(request, 'asset')) {
+    if (isTransactionDisplayType(method) && request?.asset) {
       const priceOfEther = ethereumUtils.getEthPriceUnit();
-      const amount = get(request, 'value', '0.00');
+      const amount = request?.value ?? '0.00';
       const nativeAmount = multiply(priceOfEther, amount);
       const nativeAmountDisplay = convertAmountToNativeDisplay(
         nativeAmount,
@@ -684,32 +677,14 @@ const TransactionConfirmationScreen = () => {
     );
   }, [isMessageRequest, method, nativeCurrency, request]);
 
-  const handleCustomGasFocus = useCallback(() => {
-    setKeyboardVisible(true);
-  }, []);
-  const handleCustomGasBlur = useCallback(() => {
-    setKeyboardVisible(false);
-  }, []);
-
   const offset = useSharedValue(0);
   const sheetOpacity = useSharedValue(1);
-  const animatedContainerStyles = useAnimatedStyle(() => {
-    return {
-      transform: [{ translateY: offset.value }],
-    };
-  });
-  const animatedSheetStyles = useAnimatedStyle(() => {
-    return {
-      opacity: sheetOpacity.value,
-    };
-  });
-
-  const fallbackStyles = {
-    marginBottom: keyboardVisible ? keyboardHeight : 0,
-  };
+  const animatedSheetStyles = useAnimatedStyle(() => ({
+    opacity: sheetOpacity.value,
+  }));
 
   useEffect(() => {
-    if (keyboardVisible) {
+    if (isKeyboardVisible) {
       offset.value = withSpring(
         -keyboardHeight + safeAreaInsetValues.bottom,
         springConfig
@@ -719,15 +694,15 @@ const TransactionConfirmationScreen = () => {
       offset.value = withSpring(0, springConfig);
       sheetOpacity.value = withSpring(1, springConfig);
     }
-  }, [keyboardHeight, keyboardVisible, offset, sheetOpacity]);
+  }, [isKeyboardVisible, keyboardHeight, offset, sheetOpacity]);
 
-  const amount = get(request, 'value', '0.00');
+  const amount = request?.value ?? '0.00';
 
   const isAndroidApprovalRequest = useMemo(
     () =>
       android &&
       isTransactionDisplayType(method) &&
-      !!get(request, 'asset', false) &&
+      !!request?.asset &&
       amount === 0 &&
       isBalanceEnough,
     [amount, isBalanceEnough, method, request]
@@ -755,7 +730,7 @@ const TransactionConfirmationScreen = () => {
       : deviceHeight - sheetHeight + (isMessageRequest ? 265 : 210)
     : null;
 
-  if (isTransactionDisplayType(method) && !get(request, 'asset', false)) {
+  if (isTransactionDisplayType(method) && !request?.asset) {
     marginTop += 50;
   }
 
@@ -764,8 +739,10 @@ const TransactionConfirmationScreen = () => {
   }
 
   return (
-    <AnimatedContainer
-      style={isReanimatedAvailable ? animatedContainerStyles : fallbackStyles}
+    <SheetKeyboardAnimation
+      as={AnimatedContainer}
+      isKeyboardVisible={isKeyboardVisible}
+      translateY={offset}
     >
       <SlackSheet
         backgroundColor={colors.transparent}
@@ -833,7 +810,7 @@ const TransactionConfirmationScreen = () => {
                 {methodName || 'Placeholder'}
               </Text>
             </Centered>
-            {(!keyboardVisible || ios) && (
+            {(!isKeyboardVisible || ios) && (
               <Divider color={colors.rowDividerLight} inset={[0, 143.5]} />
             )}
             {renderTransactionSection()}
@@ -872,16 +849,14 @@ const TransactionConfirmationScreen = () => {
           {!isMessageRequest && (
             <GasSpeedButtonContainer>
               <GasSpeedButton
-                onCustomGasBlur={handleCustomGasBlur}
-                onCustomGasFocus={handleCustomGasFocus}
+                onCustomGasBlur={hideKeyboard}
+                onCustomGasFocus={showKeyboard}
                 type="transaction"
               />
             </GasSpeedButtonContainer>
           )}
         </Column>
       </SlackSheet>
-    </AnimatedContainer>
+    </SheetKeyboardAnimation>
   );
-};
-
-export default TransactionConfirmationScreen;
+}

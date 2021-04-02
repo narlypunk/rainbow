@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import { useCallbackOne } from 'use-memo-one';
 import { CoinIconGroup } from '../../coin-icon';
 import { Column, ColumnWithMargins, Row, RowWithMargins } from '../../layout';
+import ChartAddToListButton from './ChartAddToListButton';
 import ChartContextButton from './ChartContextButton';
 import {
   ChartDateLabel,
@@ -56,6 +57,8 @@ export default function ChartExpandedStateHeader({
   priceRef,
   chartTimeSharedValue,
   showChart,
+  testID,
+  overrideValue = false,
 }) {
   const { colors } = useTheme();
   const color = givenColors || colors.dark;
@@ -93,10 +96,15 @@ export default function ChartExpandedStateHeader({
       <Row
         align="center"
         justify="space-between"
-        testID="expanded-state-header"
+        testID={
+          testID ? `${testID}-expanded-state-header` : 'expanded-state-header'
+        }
       >
         <CoinIconGroup tokens={tokens} />
-        <ChartContextButton asset={asset} color={color} />
+        <Row>
+          <ChartAddToListButton asset={asset} />
+          <ChartContextButton asset={asset} color={color} />
+        </Row>
       </Row>
       <Column>
         <RowWithMargins
@@ -122,6 +130,7 @@ export default function ChartExpandedStateHeader({
               }
               isScrubbing={isScrubbing}
               latestChange={latestChange}
+              overrideValue={overrideValue}
               tabularNums={tabularNums}
             />
           )}
@@ -137,6 +146,7 @@ export default function ChartExpandedStateHeader({
             color={
               isNoPriceData ? colors.alpha(colors.blueGreyDark, 0.8) : color
             }
+            testID={`chart-header-${titleOrNoPriceData}`}
             weight={isNoPriceData ? 'semibold' : 'bold'}
           >
             {titleOrNoPriceData}

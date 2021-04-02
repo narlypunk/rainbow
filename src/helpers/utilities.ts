@@ -4,6 +4,12 @@ import { supportedNativeCurrencies } from '@rainbow-me/references';
 
 type BigNumberish = number | string | BigNumber;
 
+export const abs = (value: BigNumberish): string =>
+  new BigNumber(value).abs().toFixed();
+
+export const isPositive = (value: BigNumberish): boolean =>
+  new BigNumber(value).isPositive();
+
 export const subtract = (
   numberOne: BigNumberish,
   numberTwo: BigNumberish
@@ -86,8 +92,8 @@ export const countDecimalPlaces = (value: BigNumberish): number =>
  * @return {String}   updated amount
  */
 export const updatePrecisionToDisplay = (
-  amount: BigNumberish,
-  nativePrice: BigNumberish,
+  amount: BigNumberish | null,
+  nativePrice?: BigNumberish | null,
   roundUp: boolean = false
 ): string => {
   if (!amount) return '0';
@@ -325,12 +331,29 @@ export const convertAmountToPercentageDisplay = (
 };
 
 /**
+ * @desc convert from amount to display formatted string
+ * with a threshold percent
+ */
+export const convertAmountToPercentageDisplayWithThreshold = (
+  value: BigNumberish,
+  decimals: number = 2,
+  threshold: string = '0.0001'
+): string => {
+  if (lessThan(value, threshold)) {
+    return '< 0.01%';
+  } else {
+    const display = new BigNumber(value).times(100).toFixed(decimals);
+    return `${display}%`;
+  }
+};
+
+/**
  * @desc convert from bips amount to percentage format
  */
 export const convertBipsToPercentage = (
   value: BigNumberish,
   decimals: number = 2
-): string => new BigNumber(value).shiftedBy(-2).toFixed(decimals);
+): string => new BigNumber(value || 0).shiftedBy(-2).toFixed(decimals);
 
 /**
  * @desc convert from amount value to display formatted string

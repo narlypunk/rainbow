@@ -12,14 +12,14 @@ import {
 } from '../components/sheet';
 import { useTheme } from '../context/ThemeContext';
 import isNativeStackAvailable from '../helpers/isNativeStackAvailable';
+import { deviceUtils } from '../utils';
 import {
   useAddCashLimits,
   useDimensions,
   useShakeAnimation,
   useTimeout,
   useWyreApplePay,
-} from '../hooks';
-import { deviceUtils } from '../utils';
+} from '@rainbow-me/hooks';
 import { borders } from '@rainbow-me/styles';
 
 const deviceHeight = deviceUtils.dimensions.height;
@@ -71,6 +71,7 @@ export default function AddCashSheet() {
     isPaymentComplete,
     onPurchase,
     orderCurrency,
+    orderId,
     orderStatus,
     resetAddCashForm,
     transferStatus,
@@ -117,6 +118,7 @@ export default function AddCashSheet() {
             <AddCashStatus
               error={error}
               orderCurrency={orderCurrency}
+              orderId={orderId}
               orderStatus={orderStatus}
               resetAddCashForm={resetAddCashForm}
               transferStatus={transferStatus}

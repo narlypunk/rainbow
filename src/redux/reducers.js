@@ -12,18 +12,17 @@ import gas from './gas';
 import imageMetadata from './imageMetadata';
 import keyboardHeight from './keyboardHeight';
 import multicall from './multicall';
-import openStateSettings, {
-  openSavingsReducer,
-  openSmallBalancesReducer,
-} from './openStateSettings';
-import raps from './raps';
+import openStateSettings from './openStateSettings';
 import requests from './requests';
 import settings from './settings';
 import showcaseTokens from './showcaseTokens';
 import swap from './swap';
+import topMovers from './topMovers';
 import uniqueTokens from './uniqueTokens';
 import uniswap from './uniswap';
 import uniswapLiquidity from './uniswapLiquidity';
+import userLists from './userLists';
+import usersPositions from './usersPositions';
 import walletconnect from './walletconnect';
 import wallets from './wallets';
 
@@ -40,17 +39,17 @@ export default combineReducers({
   imageMetadata,
   keyboardHeight,
   multicall,
-  openSavings: openSavingsReducer,
-  openSmallBalances: openSmallBalancesReducer,
   openStateSettings,
-  raps,
   requests,
   settings,
   showcaseTokens,
   swap,
+  topMovers,
   uniqueTokens,
   uniswap,
   uniswapLiquidity,
+  userLists,
+  usersPositions,
   walletconnect,
   wallets,
 });

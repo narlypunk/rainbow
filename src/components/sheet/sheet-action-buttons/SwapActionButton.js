@@ -1,11 +1,13 @@
 import React, { useCallback } from 'react';
-import { useExpandedStateNavigation } from '../../../hooks';
 import SheetActionButton from './SheetActionButton';
+import { useExpandedStateNavigation } from '@rainbow-me/hooks';
 import Routes from '@rainbow-me/routes';
 
 export default function SwapActionButton({
   color: givenColor,
   inputType,
+  label,
+  weight = 'bold',
   ...props
 }) {
   const { colors } = useTheme();
@@ -27,10 +29,10 @@ export default function SwapActionButton({
     <SheetActionButton
       {...props}
       color={color}
-      label="􀖅 Swap"
+      label={label || '􀖅 Swap'}
       onPress={handlePress}
       testID="swap"
-      weight="bold"
+      weight={weight}
     />
   );
 }

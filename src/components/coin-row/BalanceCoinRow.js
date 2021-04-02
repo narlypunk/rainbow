@@ -5,7 +5,6 @@ import { View } from 'react-primitives';
 import { connect } from 'react-redux';
 import styled from 'styled-components';
 import { useTheme } from '../../context/ThemeContext';
-import { useCoinListEditedValue } from '../../hooks/useCoinListEdited';
 import { ButtonPressAnimation } from '../animations';
 import { initialChartExpandedStateSheetHeight } from '../expanded-state/ChartExpandedState';
 import { Column, FlexItem, Row } from '../layout';
@@ -16,6 +15,7 @@ import CoinName from './CoinName';
 import CoinRow from './CoinRow';
 import { buildAssetUniqueIdentifier } from '@rainbow-me/helpers/assets';
 import { useCoinListEdited } from '@rainbow-me/hooks';
+import { useCoinListEditedValue } from '@rainbow-me/hooks/useCoinListEdited';
 import {
   pushSelectedCoin,
   removeSelectedCoin,
@@ -90,7 +90,7 @@ const TopRow = ({ name, native, nativeCurrencySymbol }) => {
   return (
     <TopRowContainer>
       <FlexItem flex={1}>
-        <CoinName color={colors.dark}>{name}</CoinName>
+        <CoinName>{name}</CoinName>
       </FlexItem>
       <PriceContainer>
         <BalanceText
@@ -180,7 +180,13 @@ const BalanceCoinRow = ({
         </ButtonPressAnimation>
       </Animated.View>
       <Animated.View
-        style={{ opacity: isCoinListEditedValue, position: 'absolute' }}
+        style={{
+          marginLeft: Animated.multiply(
+            -editTranslateOffset * 1.5,
+            Animated.sub(1, isCoinListEditedValue)
+          ),
+          position: 'absolute',
+        }}
       >
         <BalanceCoinRowCoinCheckButton
           onPress={handleEditModePress}
@@ -219,7 +225,10 @@ const arePropsEqual = (prev, next) => {
 const MemoizedBalanceCoinRow = React.memo(BalanceCoinRow, arePropsEqual);
 
 export default connect(
-  ({ editOptions: { recentlyPinnedCount }, openSmallBalances }) => ({
+  ({
+    editOptions: { recentlyPinnedCount },
+    openStateSettings: { openSmallBalances },
+  }) => ({
     openSmallBalances,
     recentlyPinnedCount,
   }),

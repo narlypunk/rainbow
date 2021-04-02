@@ -7,9 +7,9 @@
 export { default as abbreviations } from './abbreviations';
 export { default as addressUtils } from './address';
 export { default as AllowancesCache } from './allowancesCache';
+export { default as TokensListenedCache } from './tokensListenedCache';
 export { default as backgroundTask } from './backgroundTask';
 export { default as checkTokenIsScam } from './checkTokenIsScam';
-export { default as contractUtils } from './contract';
 export { default as deviceUtils } from './deviceUtils';
 export { default as dimensionsPropType } from './dimensionsPropType';
 export { default as directionPropType } from './directionPropType';
@@ -44,3 +44,4 @@ export {
   removeLeadingZeros,
   sanitizeSeedPhrase,
 } from './formatters';
+export { default as withSpeed } from './withSpeed';

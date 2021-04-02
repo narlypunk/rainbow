@@ -22,7 +22,6 @@ import { removeWalletData } from '../handlers/localstorage/removeWallet';
 import showWalletErrorAlert from '../helpers/support';
 import WalletLoadingStates from '../helpers/walletLoadingStates';
 import WalletTypes from '../helpers/walletTypes';
-import { useWalletsWithBalancesAndNames } from '../hooks/useWalletsWithBalancesAndNames';
 import { cleanUpWalletKeys, createWallet } from '../model/wallet';
 import { useNavigation } from '../navigation/Navigation';
 import {
@@ -39,6 +38,7 @@ import {
   useInitializeWallet,
   useWallets,
 } from '@rainbow-me/hooks';
+import { useWalletsWithBalancesAndNames } from '@rainbow-me/hooks/useWalletsWithBalancesAndNames';
 import Routes from '@rainbow-me/routes';
 import {
   abbreviations,
@@ -123,7 +123,6 @@ export default function ChangeWalletSheet() {
   const initializeWallet = useInitializeWallet();
   const walletsWithBalancesAndNames = useWalletsWithBalancesAndNames();
   const creatingWallet = useRef();
-
   const [currentAddress, setCurrentAddress] = useState(accountAddress);
   const [currentSelectedWallet, setCurrentSelectedWallet] = useState(
     selectedWallet
@@ -159,7 +158,7 @@ export default function ChangeWalletSheet() {
         const p2 = dispatch(addressSetSelected(address));
         await Promise.all([p1, p2]);
 
-        initializeWallet();
+        initializeWallet(null, null, null, false, false, null, true);
         !fromDeletion && goBack();
       } catch (e) {
         logger.log('error while switching account', e);

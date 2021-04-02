@@ -11,13 +11,13 @@ import TransactionList from '../components/transaction-list/TransactionList';
 import { useTheme } from '../context/ThemeContext';
 import useNativeTransactionListAvailable from '../helpers/isNativeTransactionListAvailable';
 import NetworkTypes from '../helpers/networkTypes';
+import { useNavigation } from '../navigation/Navigation';
 import {
   useAccountSettings,
   useAccountTransactions,
   useContacts,
   useRequests,
-} from '../hooks';
-import { useNavigation } from '../navigation/Navigation';
+} from '@rainbow-me/hooks';
 import Routes from '@rainbow-me/routes';
 import { position } from '@rainbow-me/styles';
 
@@ -70,7 +70,8 @@ export default function ProfileScreen({ navigation }) {
   }, [navigate]);
 
   const addCashSupportedNetworks =
-    network === NetworkTypes.kovan || network === NetworkTypes.mainnet;
+    (IS_DEV && network === NetworkTypes.kovan) ||
+    network === NetworkTypes.mainnet;
   const addCashAvailable =
     IS_TESTING === 'true' ? false : addCashSupportedNetworks;
 

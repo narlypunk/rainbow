@@ -4,6 +4,7 @@ ios/GoogleService-Info.plist
 # OSX
 #
 ios/ReaHeader.h
+ios/AppDelegate.pch
 .DS_Store
 ios/Pods/
 ios/*dSYM.zip
@@ -41,6 +42,8 @@ build/
 .gradle
 local.properties
 *.iml
+android/app/google-services.json
+
 
 # node.js
 #

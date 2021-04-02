@@ -56,7 +56,8 @@ const InnerDot = styled.View`
   height: 10px;
   border-radius: 5px;
   background-color: ${({ color }) => color};
-  shadow-color: ${({ color }) => color};
+  shadow-color: ${({ color, theme: { colors, isDarkMode } }) =>
+    isDarkMode ? colors.shadow : color};
   shadow-offset: 0 3px;
   shadow-opacity: 0.6;
   shadow-radius: 4.5px;
@@ -113,7 +114,9 @@ export default function ChartWrapper({
   showChart,
   showMonth,
   showYear,
+  testID,
   throttledData,
+  overrideValue = false,
   ...props
 }) {
   const timespanIndex = useMemo(() => ChartTimespans.indexOf(chartType), [
@@ -201,7 +204,9 @@ export default function ChartWrapper({
         chartTimeSharedValue={chartTimeSharedValue}
         color={color}
         isPool={isPool}
+        overrideValue={overrideValue}
         showChart={showChart}
+        testID={testID}
       />
       <ChartContainer showChart={showChart}>
         {showChart && (
