@@ -1,4 +1,7 @@
-import { findKey, keys } from 'lodash';
+import { captureException } from '@sentry/react-native';
+import { findKey, isNumber, keys } from 'lodash';
+import { removeLocal } from '../handlers/localstorage/common';
+import { IMAGE_METADATA } from '../handlers/localstorage/globalSettings';
 import {
   getMigrationVersion,
   setMigrationVersion,
@@ -14,13 +17,21 @@ import {
 import store from '../redux/store';
 
 import { walletsSetSelected, walletsUpdate } from '../redux/wallets';
-import { getRandomColor } from '../styles/colors';
+import colors, { getRandomColor } from '../styles/colors';
 import { hasKey } from './keychain';
+import {
+  getContacts,
+  saveContacts,
+} from '@rainbow-me/handlers/localstorage/contacts';
 import {
   getUserLists,
   saveUserLists,
 } from '@rainbow-me/handlers/localstorage/userLists';
+import { resolveNameOrAddress } from '@rainbow-me/handlers/web3';
+import { returnStringFirstEmoji } from '@rainbow-me/helpers/emojiHandler';
+import { updateWebDataEnabled } from '@rainbow-me/redux/showcaseTokens';
 import { DefaultTokenLists } from '@rainbow-me/references';
+import { profileUtils } from '@rainbow-me/utils';
 import logger from 'logger';
 
 export default async function runMigrations() {
@@ -233,6 +244,173 @@ export default async function runMigrations() {
 
   migrations.push(v5);
 
+  /* Fix dollars => stablecoins */
+  const v6 = async () => {
+    try {
+      const userLists = await getUserLists();
+      const newLists = userLists.map(list => {
+        if (list.id !== 'dollars') {
+          return list;
+        }
+        return DefaultTokenLists['mainnet'].find(
+          ({ id }) => id === 'stablecoins'
+        );
+      });
+      await saveUserLists(newLists);
+    } catch (e) {
+      logger.log('ignoring lists migrations');
+    }
+  };
+
+  migrations.push(v6);
+
+  /* Turning ON web data for all accounts */
+  const v7 = async () => {
+    const { wallets } = store.getState().wallets;
+    if (!wallets) return;
+    const walletKeys = Object.keys(wallets);
+    for (let i = 0; i < walletKeys.length; i++) {
+      const wallet = wallets[walletKeys[i]];
+      if (wallet.type !== WalletTypes.readOnly) {
+        for (let x = 0; x < wallet.addresses.length; x++) {
+          const { address } = wallet.addresses[x];
+          logger.log('setting web profiles for address', address);
+          await store.dispatch(updateWebDataEnabled(true, address));
+        }
+      }
+    }
+  };
+
+  migrations.push(v7);
+
+  const v8 = async () => {
+    logger.log('wiping old metadata');
+    await removeLocal(IMAGE_METADATA);
+  };
+
+  migrations.push(v8);
+
+  /*
+   *************** Migration v9 ******************
+   * This step makes sure all wallets' color property (index)
+   * are updated to point to the new webProfile colors. Do the
+   * same for contacts
+   */
+  const v9 = async () => {
+    logger.log('Start migration v9');
+    // map from old color index to closest new color's index
+    const newColorIndexes = [0, 4, 12, 21, 1, 20, 4, 9, 10];
+    try {
+      const { selected, wallets } = store.getState().wallets;
+      if (!wallets) return;
+      const walletKeys = Object.keys(wallets);
+      let updatedWallets = { ...wallets };
+      for (let i = 0; i < walletKeys.length; i++) {
+        const wallet = wallets[walletKeys[i]];
+        const newAddresses = wallet.addresses.map(account => {
+          const accountEmoji = returnStringFirstEmoji(account?.label);
+          return {
+            ...account,
+            ...(!accountEmoji && {
+              label: `${profileUtils.addressHashedEmoji(account.address)} ${
+                account.label
+              }`,
+            }),
+            color:
+              (accountEmoji
+                ? newColorIndexes[account.color]
+                : profileUtils.addressHashedColorIndex(account.address)) || 0,
+          };
+        });
+        const newWallet = { ...wallet, addresses: newAddresses };
+        updatedWallets[walletKeys[i]] = newWallet;
+      }
+      logger.log('update wallets in store to index new colors');
+      await store.dispatch(walletsUpdate(updatedWallets));
+
+      const selectedWalletId = selected?.id;
+      if (selectedWalletId) {
+        logger.log('update selected wallet to index new color');
+        await store.dispatch(
+          walletsSetSelected(updatedWallets[selectedWalletId])
+        );
+      }
+
+      // migrate contacts to new color index
+      const contacts = await getContacts();
+      let updatedContacts = { ...contacts };
+      if (!contacts) return;
+      const contactKeys = Object.keys(contacts);
+      for (let j = 0; j < contactKeys.length; j++) {
+        const contact = contacts[contactKeys[j]];
+        updatedContacts[contactKeys[j]] = {
+          ...contact,
+          color: isNumber(contact.color)
+            ? newColorIndexes[contact.color]
+            : typeof contact.color === 'string' &&
+              colors.avatarBackgrounds.includes(contact.color)
+            ? colors.avatarBackgrounds.indexOf(contact.color)
+            : getRandomColor(),
+        };
+      }
+      logger.log('update contacts to index new colors');
+      await saveContacts(updatedContacts);
+    } catch (error) {
+      logger.sentry('Migration v9 failed: ', error);
+      const migrationError = new Error('Migration 9 failed');
+      captureException(migrationError);
+    }
+  };
+
+  migrations.push(v9);
+
+  /*
+   *************** Migration v10 ******************
+   * This step makes sure all contacts have an emoji set based on the address
+   */
+  const v10 = async () => {
+    logger.log('Start migration v10');
+    try {
+      // migrate contacts to corresponding emoji
+      const contacts = await getContacts();
+      let updatedContacts = { ...contacts };
+      if (!contacts) return;
+      const contactKeys = Object.keys(contacts);
+      for (let j = 0; j < contactKeys.length; j++) {
+        const contact = contacts[contactKeys[j]];
+        let nickname = contact.nickname;
+        if (!returnStringFirstEmoji(nickname)) {
+          let address = null;
+          try {
+            address = await resolveNameOrAddress(contact.address);
+          } catch (error) {
+            const migrationError = new Error(
+              `Error during v10 migration contact address resolution for ${contact.address}`
+            );
+            captureException(migrationError);
+            continue;
+          }
+          const emoji = profileUtils.addressHashedEmoji(address);
+          const color = profileUtils.addressHashedColorIndex(address);
+          nickname = `${emoji} ${nickname}`;
+          updatedContacts[contactKeys[j]] = {
+            ...contact,
+            color,
+            nickname,
+          };
+        }
+      }
+      logger.log('update contacts to add emojis / colors');
+      await saveContacts(updatedContacts);
+    } catch (error) {
+      logger.sentry('Migration v10 failed: ', error);
+      const migrationError = new Error('Migration 10 failed');
+      captureException(migrationError);
+    }
+  };
+
+  migrations.push(v10);
+
   logger.sentry(
     `Migrations: ready to run migrations starting on number ${currentVersion}`
   );
@@ -248,19 +426,4 @@ export default async function runMigrations() {
     logger.sentry(`Migrations: Migration ${i} completed succesfully`);
     await setMigrationVersion(i + 1);
   }
-
-  const v6 = async () => {
-    const userLists = await getUserLists();
-    const newLists = userLists.map(list => {
-      if (list.id !== 'dollars') {
-        return list;
-      }
-      return DefaultTokenLists['mainnet'].find(
-        ({ id }) => id === 'stablecoins'
-      );
-    });
-    await saveUserLists(newLists);
-  };
-
-  migrations.push(v6);
 }

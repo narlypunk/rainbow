@@ -1,4 +1,5 @@
 import analytics from '@segment/analytics-react-native';
+import { isEmpty } from 'lodash';
 import React, {
   Fragment,
   useCallback,
@@ -7,9 +8,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Keyboard } from 'react-native';
+import { Alert, Keyboard, NativeModules } from 'react-native';
 import { useAndroidBackHandler } from 'react-navigation-backhandler';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import styled from 'styled-components';
 import { useMemoOne } from 'use-memo-one';
 import { dismissingScreenListener } from '../../shim';
@@ -29,9 +30,15 @@ import { GasSpeedButton } from '../components/gas';
 import { Centered, KeyboardFixedOpenLayout } from '../components/layout';
 import { ExchangeModalTypes, isKeyboardOpen } from '@rainbow-me/helpers';
 import {
+  convertStringToNumber,
+  divide,
+  multiply,
+} from '@rainbow-me/helpers/utilities';
+import {
   useAccountSettings,
   useBlockPolling,
   useGas,
+  usePrevious,
   usePriceImpactDetails,
   useSwapCurrencies,
   useSwapCurrencyHandlers,
@@ -44,10 +51,10 @@ import { useNavigation } from '@rainbow-me/navigation';
 import { executeRap, getRapEstimationByType } from '@rainbow-me/raps';
 import { multicallClearState } from '@rainbow-me/redux/multicall';
 import { swapClearState, updateSwapTypeDetails } from '@rainbow-me/redux/swap';
-import { ethUnits } from '@rainbow-me/references';
+import { ETH_ADDRESS, ethUnits } from '@rainbow-me/references';
 import Routes from '@rainbow-me/routes';
 import { position } from '@rainbow-me/styles';
-import { backgroundTask } from '@rainbow-me/utils';
+import { useEthUSDPrice } from '@rainbow-me/utils/ethereumUtils';
 import logger from 'logger';
 
 const FloatingPanels = ios
@@ -104,6 +111,10 @@ export default function ExchangeModal({
 
   const title = getInputHeaderTitle(type, defaultInputAsset);
   const showOutputField = getShowOutputField(type);
+  const priceOfEther = useEthUSDPrice();
+  const genericAssets = useSelector(
+    ({ data: { genericAssets } }) => genericAssets
+  );
 
   const {
     navigate,
@@ -123,6 +134,8 @@ export default function ExchangeModal({
     : ethUnits.basic_swap;
 
   const {
+    gasPrices,
+    selectedGasPrice,
     startPollingGasPrices,
     stopPollingGasPrices,
     updateDefaultGasLimit,
@@ -130,9 +143,11 @@ export default function ExchangeModal({
   } = useGas();
 
   const { initWeb3Listener, stopWeb3Listener } = useBlockPolling();
-  const { nativeCurrency } = useAccountSettings();
+  const { nativeCurrency, network } = useAccountSettings();
 
   const [isAuthorizing, setIsAuthorizing] = useState(false);
+
+  const prevGasPrices = usePrevious(gasPrices);
 
   useAndroidBackHandler(() => {
     navigate(Routes.WALLET_SCREEN);
@@ -145,6 +160,7 @@ export default function ExchangeModal({
     handleFocus,
     inputFieldRef,
     lastFocusedInputHandle,
+    setLastFocusedInputHandle,
     nativeFieldRef,
     outputFieldRef,
   } = useSwapInputRefs();
@@ -164,7 +180,9 @@ export default function ExchangeModal({
     defaultInputAsset,
     defaultOutputAsset,
     inputFieldRef,
+    lastFocusedInputHandle,
     outputFieldRef,
+    setLastFocusedInputHandle,
     title,
     type,
   });
@@ -172,11 +190,13 @@ export default function ExchangeModal({
   const {
     derivedValues: { inputAmount, nativeAmount, outputAmount },
     displayValues: { inputAmountDisplay, outputAmountDisplay },
+    doneLoadingReserves,
     tradeDetails,
   } = useSwapDerivedOutputs();
 
   const {
     isHighPriceImpact,
+    outputPriceValue,
     priceImpactColor,
     priceImpactNativeAmount,
     priceImpactPercentDisplay,
@@ -249,21 +269,23 @@ export default function ExchangeModal({
     updateTxFee,
   ]);
 
-  // Update gas limit
-  useEffect(() => {
-    updateGasLimit();
-  }, [updateGasLimit]);
-
   // Set default gas limit
   useEffect(() => {
-    setTimeout(() => {
+    if (isEmpty(prevGasPrices) && !isEmpty(gasPrices)) {
       updateTxFee(defaultGasLimit);
-    }, 1000);
-  }, [defaultGasLimit, updateTxFee]);
+    }
+  }, [gasPrices, defaultGasLimit, updateTxFee, prevGasPrices]);
+
+  // Update gas limit
+  useEffect(() => {
+    if (!isEmpty(gasPrices)) {
+      updateGasLimit();
+    }
+  }, [gasPrices, updateGasLimit]);
 
   // Liten to gas prices, Uniswap reserves updates
   useEffect(() => {
-    updateDefaultGasLimit(defaultGasLimit);
+    updateDefaultGasLimit(network, defaultGasLimit);
     startPollingGasPrices();
     initWeb3Listener();
     return () => {
@@ -272,6 +294,7 @@ export default function ExchangeModal({
     };
   }, [
     defaultGasLimit,
+    network,
     initWeb3Listener,
     startPollingGasPrices,
     stopPollingGasPrices,
@@ -283,9 +306,62 @@ export default function ExchangeModal({
     updateMaxInputAmount();
   }, [updateMaxInputAmount]);
 
-  const handleSubmit = useCallback(() => {
-    backgroundTask.execute(async () => {
+  const checkGasVsOutput = async (gasPrice, outputPrice) => {
+    const outputValue = convertStringToNumber(outputPrice);
+    if (outputValue > 0 && convertStringToNumber(gasPrice) > outputValue) {
+      const res = new Promise(resolve => {
+        Alert.alert(
+          'Are you sure?',
+          'This transaction will cost you more than the value you are swapping to, are you sure you want to continue?',
+          [
+            {
+              onPress: () => {
+                resolve(false);
+              },
+              text: 'Proceed Anyway',
+            },
+            {
+              onPress: () => {
+                resolve(true);
+              },
+              style: 'cancel',
+              text: 'Cancel',
+            },
+          ]
+        );
+      });
+      return res;
+    } else {
+      return false;
+    }
+  };
+
+  const handleSubmit = useCallback(async () => {
+    let amountInUSD = 0;
+    let NotificationManager = ios ? NativeModules.NotificationManager : null;
+    try {
+      // Tell iOS we're running a rap (for tracking purposes)
+      NotificationManager &&
+        NotificationManager.postNotification('rapInProgress');
+      if (nativeCurrency === 'usd') {
+        amountInUSD = nativeAmount;
+      } else {
+        const ethPriceInNativeCurrency =
+          genericAssets[ETH_ADDRESS]?.price?.value ?? 0;
+        const tokenPriceInNativeCurrency =
+          genericAssets[inputCurrency?.address]?.price?.value ?? 0;
+        const tokensPerEth = divide(
+          tokenPriceInNativeCurrency,
+          ethPriceInNativeCurrency
+        );
+        const inputTokensInEth = multiply(tokensPerEth, inputAmount);
+        amountInUSD = multiply(priceOfEther, inputTokensInEth);
+      }
+    } catch (e) {
+      logger.log('error getting the swap amount in USD price', e);
+    } finally {
       analytics.track(`Submitted ${type}`, {
+        amountInUSD,
         defaultInputAsset: defaultInputAsset?.symbol ?? '',
         isHighPriceImpact,
         name: outputCurrency?.name ?? '',
@@ -294,48 +370,74 @@ export default function ExchangeModal({
         tokenAddress: outputCurrency?.address || '',
         type,
       });
+    }
 
-      setIsAuthorizing(true);
-      try {
-        const wallet = await loadWallet();
-        if (!wallet) {
-          setIsAuthorizing(false);
-          logger.sentry(`aborting ${type} due to missing wallet`);
-          return;
-        }
+    const outputInUSD = outputPriceValue * outputAmount;
+    const gasPrice = selectedGasPrice?.txFee?.native?.value?.amount;
+    const cancelTransaction = await checkGasVsOutput(gasPrice, outputInUSD);
 
-        const callback = () => {
-          setIsAuthorizing(false);
+    if (cancelTransaction) {
+      return;
+    }
+
+    setIsAuthorizing(true);
+    try {
+      const wallet = await loadWallet();
+      if (!wallet) {
+        setIsAuthorizing(false);
+        logger.sentry(`aborting ${type} due to missing wallet`);
+        return;
+      }
+
+      const callback = (success = false, errorMessage = null) => {
+        setIsAuthorizing(false);
+        if (success) {
           setParams({ focused: false });
           navigate(Routes.PROFILE_SCREEN);
-        };
-        logger.log('[exchange - handle submit] rap');
-        const swapParameters = {
-          inputAmount,
-          outputAmount,
-          tradeDetails,
-        };
-        await executeRap(wallet, type, swapParameters, callback);
-        logger.log('[exchange - handle submit] executed rap!');
-        analytics.track(`Completed ${type}`, {
-          defaultInputAsset: defaultInputAsset?.symbol || '',
-          type,
-        });
-      } catch (error) {
-        setIsAuthorizing(false);
-        logger.log('[exchange - handle submit] error submitting swap', error);
-        setParams({ focused: false });
-        navigate(Routes.WALLET_SCREEN);
-      }
-    });
+        } else if (errorMessage) {
+          Alert.alert(errorMessage);
+        }
+      };
+      logger.log('[exchange - handle submit] rap');
+      const swapParameters = {
+        inputAmount,
+        outputAmount,
+        tradeDetails,
+      };
+      await executeRap(wallet, type, swapParameters, callback);
+      logger.log('[exchange - handle submit] executed rap!');
+      analytics.track(`Completed ${type}`, {
+        amountInUSD,
+        input: defaultInputAsset?.symbol || '',
+        output: outputCurrency?.symbol || '',
+        type,
+      });
+      // Tell iOS we finished running a rap (for tracking purposes)
+      NotificationManager &&
+        NotificationManager.postNotification('rapCompleted');
+    } catch (error) {
+      setIsAuthorizing(false);
+      logger.log('[exchange - handle submit] error submitting swap', error);
+      setParams({ focused: false });
+      navigate(Routes.WALLET_SCREEN);
+    }
   }, [
-    defaultInputAsset,
+    defaultInputAsset?.symbol,
+    genericAssets,
     inputAmount,
+    inputCurrency?.address,
     isHighPriceImpact,
+    nativeAmount,
+    nativeCurrency,
     navigate,
     outputAmount,
-    outputCurrency,
+    outputCurrency?.address,
+    outputCurrency?.name,
+    outputCurrency?.symbol,
+    outputPriceValue,
     priceImpactPercentDisplay,
+    priceOfEther,
+    selectedGasPrice?.txFee?.native?.value?.amount,
     setParams,
     tradeDetails,
     type,
@@ -344,6 +446,7 @@ export default function ExchangeModal({
   const confirmButtonProps = useMemoOne(
     () => ({
       disabled: !Number(inputAmount),
+      doneLoadingReserves,
       inputAmount,
       isAuthorizing,
       isHighPriceImpact,
@@ -352,6 +455,7 @@ export default function ExchangeModal({
       type,
     }),
     [
+      doneLoadingReserves,
       handleSubmit,
       inputAmount,
       isAuthorizing,
@@ -476,12 +580,14 @@ export default function ExchangeModal({
             <ConfirmExchangeButton
               {...confirmButtonProps}
               onPressViewDetails={navigateToSwapDetailsModal}
-              testID={`${testID}-confirm`}
+              testID={`${testID}-confirm-button`}
             />
           )}
           <GasSpeedButton
+            currentNetwork={network}
             dontBlur
             onCustomGasBlur={handleCustomGasBlur}
+            options={['normal', 'fast', 'custom']}
             testID={`${testID}-gas`}
             type={type}
           />

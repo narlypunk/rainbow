@@ -12,13 +12,32 @@ import Spinner from '../Spinner';
 import { BiometricButtonContent, Button } from '../buttons';
 import { CopyFloatingEmojis } from '../floating-emojis';
 import { Icon } from '../icons';
-import { ColumnWithMargins, RowWithMargins } from '../layout';
+import { Column, ColumnWithMargins, RowWithMargins } from '../layout';
 import { Text } from '../text';
 import SecretDisplayCard from './SecretDisplayCard';
 import WalletTypes from '@rainbow-me/helpers/walletTypes';
 import { useWallets } from '@rainbow-me/hooks';
 import { margin, padding, position, shadow } from '@rainbow-me/styles';
 import logger from 'logger';
+
+const Title = styled(Text).attrs({
+  align: 'center',
+  size: 'lmedium',
+  weight: 'bold',
+})`
+  padding-top: 20;
+`;
+const DescriptionText = styled(Text).attrs(({ theme: { colors } }) => ({
+  align: 'center',
+  color: colors.alpha(colors.blueGreyDark, 0.6),
+  lineHeight: 'loose',
+  size: 'lmedium',
+  weight: 'semibold',
+}))`
+  margin-bottom: 42;
+  margin-top: 5;
+  padding-horizontal: 3;
+`;
 
 const AuthenticationText = styled(Text).attrs({
   align: 'center',
@@ -50,7 +69,7 @@ const CopyButtonText = styled(Text).attrs(({ theme: { colors } }) => ({
   color: colors.appleBlue,
   letterSpacing: 'roundedMedium',
   lineHeight: 19,
-  size: 'large',
+  size: 'lmedium',
   weight: 'bold',
 }))``;
 
@@ -111,7 +130,7 @@ export default function SecretDisplaySection({
     <ColumnWithMargins
       align="center"
       justify="center"
-      margin={24}
+      margin={16}
       paddingHorizontal={30}
     >
       {visible ? (
@@ -124,7 +143,15 @@ export default function SecretDisplaySection({
                   <CopyButtonText>Copy to clipboard</CopyButtonText>
                 </CopyButtonRow>
               </CopyFloatingEmojis>
-              <SecretDisplayCard seed={seed} type={type} />
+              <Column>
+                <SecretDisplayCard seed={seed} type={type} />
+              </Column>
+              <Column>
+                <Title>👆For your eyes only 👆</Title>
+                <DescriptionText>
+                  Anyone who has these words can access your entire wallet!
+                </DescriptionText>
+              </Column>
             </Fragment>
           ) : (
             <LoadingSpinner color={colors.blueGreyDark50} />

@@ -10,18 +10,22 @@ import ChangeWalletSheet from '../screens/ChangeWalletSheet';
 import ConnectedDappsSheet from '../screens/ConnectedDappsSheet';
 import DepositModal from '../screens/DepositModal';
 import ExpandedAssetSheet from '../screens/ExpandedAssetSheet';
+import ExplainSheet from '../screens/ExplainSheet';
 import ImportSeedPhraseSheet from '../screens/ImportSeedPhraseSheet';
 import ModalScreen from '../screens/ModalScreen';
 import PinAuthenticationScreen from '../screens/PinAuthenticationScreen';
 import ReceiveModal from '../screens/ReceiveModal';
 import RestoreSheet from '../screens/RestoreSheet';
 import SavingsSheet from '../screens/SavingsSheet';
+import SendConfirmationSheet from '../screens/SendConfirmationSheet';
 import SendSheet from '../screens/SendSheet';
 import SettingsModal from '../screens/SettingsModal';
+import ShowcaseSheet from '../screens/ShowcaseSheet';
 import SpeedUpAndCancelSheet from '../screens/SpeedUpAndCancelSheet';
 import TransactionConfirmationScreen from '../screens/TransactionConfirmationScreen';
 import WalletConnectApprovalSheet from '../screens/WalletConnectApprovalSheet';
 import WalletConnectRedirectSheet from '../screens/WalletConnectRedirectSheet';
+import WalletDiagnosticsSheet from '../screens/WalletDiagnosticsSheet';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import WithdrawModal from '../screens/WithdrawModal';
 import WyreWebview from '../screens/WyreWebview';
@@ -41,7 +45,6 @@ import {
   expandedPreset,
   expandedPresetWithSmallGestureResponseDistance,
   overlayExpandedPreset,
-  settingsPreset,
   sheetPreset,
   sheetPresetWithSmallGestureResponseDistance,
   speedUpAndCancelStyleInterpolator,
@@ -126,16 +129,6 @@ function MainNavigator() {
         options={emojiPreset}
       />
       <Stack.Screen
-        component={ExpandedAssetSheet}
-        name={Routes.EXPANDED_ASSET_SHEET}
-        options={expandedPreset}
-      />
-      <Stack.Screen
-        component={ExpandedAssetSheet}
-        name={Routes.TOKEN_INDEX_SHEET}
-        options={expandedPreset}
-      />
-      <Stack.Screen
         component={ChangeWalletSheet}
         name={Routes.CHANGE_WALLET_SHEET}
         options={expandedPreset}
@@ -195,11 +188,6 @@ function MainNavigator() {
         options={sheetPreset}
       />
       <Stack.Screen
-        component={SavingsSheet}
-        name={Routes.SAVINGS_SHEET}
-        options={bottomSheetPreset}
-      />
-      <Stack.Screen
         component={AddTokenSheet}
         name={Routes.ADD_TOKEN_SHEET}
         options={bottomSheetPreset}
@@ -230,7 +218,11 @@ function MainNavigator() {
         name={Routes.IMPORT_SEED_PHRASE_SHEET_NAVIGATOR}
         options={sheetPresetWithSmallGestureResponseDistance}
       />
-      <Stack.Screen component={WelcomeScreen} name={Routes.WELCOME_SCREEN} />
+      <Stack.Screen
+        component={WelcomeScreen}
+        name={Routes.WELCOME_SCREEN}
+        options={{ animationEnabled: false, gestureEnabled: false }}
+      />
       <Stack.Screen
         component={AddCashFlowNavigator}
         name={Routes.WYRE_WEBVIEW_NAVIGATOR}
@@ -253,18 +245,8 @@ function MainOuterNavigator() {
       />
       <OuterStack.Screen
         component={ExpandedAssetSheet}
-        name={Routes.EXPANDED_ASSET_SCREEN}
-        options={sheetPreset}
-      />
-      <OuterStack.Screen
-        component={ExpandedAssetSheet}
         name={Routes.TOKEN_INDEX_SCREEN}
         options={expandedPresetWithSmallGestureResponseDistance}
-      />
-      <OuterStack.Screen
-        component={SettingsModal}
-        name={Routes.SETTINGS_MODAL}
-        options={settingsPreset}
       />
       <OuterStack.Screen
         component={PinAuthenticationScreen}
@@ -291,6 +273,44 @@ function BSNavigator() {
         component={SendFlowNavigator}
         name={Routes.SEND_SHEET_NAVIGATOR}
       />
+      <BSStack.Screen
+        component={ExpandedAssetSheet}
+        name={Routes.TOKEN_INDEX_SHEET}
+      />
+      <BSStack.Screen
+        component={ShowcaseSheet}
+        name={Routes.SHOWCASE_SHEET}
+        options={{
+          height: '90%',
+        }}
+      />
+      <BSStack.Screen
+        component={ExpandedAssetSheet}
+        name={Routes.EXPANDED_ASSET_SHEET}
+      />
+      <BSStack.Screen
+        component={ExpandedAssetSheet}
+        name={Routes.EXPANDED_ASSET_SHEET_POOLS}
+        options={expandedPresetWithSmallGestureResponseDistance}
+      />
+      <BSStack.Screen
+        component={ExplainSheet}
+        name={Routes.EXPLAIN_SHEET}
+        options={{
+          height: '100%',
+        }}
+      />
+      <BSStack.Screen
+        component={SendConfirmationSheet}
+        name={Routes.SEND_CONFIRMATION_SHEET}
+        options={sheetPreset}
+      />
+      <BSStack.Screen
+        component={WalletDiagnosticsSheet}
+        name={Routes.WALLET_DIAGNOSTICS_SHEET}
+      />
+      <BSStack.Screen component={SavingsSheet} name={Routes.SAVINGS_SHEET} />
+      <BSStack.Screen component={SettingsModal} name={Routes.SETTINGS_MODAL} />
     </BSStack.Navigator>
   );
 }

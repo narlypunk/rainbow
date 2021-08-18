@@ -1,3 +1,4 @@
+import { BottomSheetScrollView, useBottomSheet } from '@gorhom/bottom-sheet';
 import { findIndex, get } from 'lodash';
 import React, {
   useCallback,
@@ -21,7 +22,6 @@ import {
   LayoutProvider,
   RecyclerListView,
 } from 'recyclerlistview';
-
 import {
   RecyclerListViewProps,
   RecyclerListViewState,
@@ -35,11 +35,116 @@ import AssetListHeader, { AssetListHeaderHeight } from '../AssetListHeader';
 import { firstCoinRowMarginTop, ViewTypes } from '../RecyclerViewTypes';
 
 import LayoutItemAnimator from './LayoutItemAnimator';
+import { EthereumAddress } from '@rainbow-me/entities';
 import { usePrevious } from '@rainbow-me/hooks';
 import { deviceUtils, logger } from '@rainbow-me/utils';
 
+const extractCollectiblesIdFromRow = (row: {
+  item: {
+    tokens: { asset_contract: { address: EthereumAddress }; id: string }[][];
+  };
+}) => {
+  try {
+    let tokenAddresses = '';
+    row.item?.tokens?.forEach(
+      (
+        token: { asset_contract: { address: EthereumAddress }; id: string }[]
+      ) => {
+        token.forEach(
+          (individualToken: {
+            asset_contract: { address: EthereumAddress };
+            id: string;
+          }) => {
+            tokenAddresses += `${individualToken?.asset_contract?.address}|${individualToken.id}||`;
+          }
+        );
+      }
+    );
+    return tokenAddresses;
+    // eslint-disable-next-line no-empty
+  } catch (e) {}
+};
+
+const extractRelevantAssetInfo = (asset: {
+  address: EthereumAddress;
+  balance: { display: string };
+  price: { relative_change_24h: string };
+  native: { balance: { display: string } };
+}) => {
+  try {
+    const {
+      address,
+      balance: { display: balanceDisplay },
+      price: { relative_change_24h: relativeChange24h },
+      native: {
+        balance: { display: nativeBalanceDisplay },
+      },
+    } = asset;
+    return {
+      address,
+      balanceDisplay,
+      nativeBalanceDisplay,
+      relativeChange24h,
+    };
+    // eslint-disable-next-line no-empty
+  } catch (e) {}
+};
+
+const extractPoolRelevantAssetsInfo = (data: any[]) => {
+  try {
+    return data?.map(asset => ({
+      address: asset.address,
+      balanceDisplay: asset.balance?.display,
+      nativeBalanceDisplay: asset.native?.balance?.display,
+      priceDisplay: asset.price?.value,
+      relativeChange24h: asset.price?.relative_change_24h,
+      totalNativeDisplay: asset.totalNativeDisplay,
+    }));
+    // eslint-disable-next-line no-empty
+  } catch (e) {}
+};
+
 const defaultIndices = [0];
-const isEqualDataProvider = new DataProvider(isEqual);
+const isEqualDataProvider = new DataProvider((r1, r2) => {
+  // Last placeholder
+  if (r1.isLastPlaceholder) {
+    return r1.isLastPlaceholder === r2.isLastPlaceholder;
+    // coinDivider
+  } else if (r1.item?.coinDivider) {
+    return r1.item?.value === r2.item?.value;
+    // Savings
+  } else if (r1.item?.savingsContainer) {
+    return isEqual(r1.item.assets, r2.item?.assets);
+    // Family sections
+  } else if (r1.familySectionIndex === 0 || r1.familySectionIndex > 0) {
+    const nftsRow1 = extractCollectiblesIdFromRow(r1);
+    const nftsRow2 = extractCollectiblesIdFromRow(r2);
+    return (
+      r1.item.childrenAmount === r2.item?.childrenAmount &&
+      r1.item.familyName === r2.item?.familyName &&
+      isEqual(nftsRow1, nftsRow2)
+    );
+
+    // Coin Rows
+  } else if (r1.item?.address) {
+    const slimR1 = extractRelevantAssetInfo(r1.item);
+    const slimR2 = extractRelevantAssetInfo(r2.item);
+    return isEqual(slimR1, slimR2);
+    // Pool rows
+  } else if (r1.data) {
+    const r1Assets = r1.data.map(extractPoolRelevantAssetsInfo);
+    const r2Assets = r2.data?.map(extractPoolRelevantAssetsInfo);
+    return isEqual(r1Assets, r2Assets);
+    // Small balances rows
+  } else if (r1.item?.assets) {
+    const r1Assets = r1.item.assets.map(extractRelevantAssetInfo);
+    const r2Assets = r2.item?.assets?.map(extractRelevantAssetInfo);
+    return isEqual(r1Assets, r2Assets);
+    // Headers, which are very small objects :D
+  } else {
+    return isEqual(r1, r2);
+  }
+});
 
 const StyledRecyclerListView = styled(RecyclerListView)`
   background-color: ${({ theme: { colors } }) => colors.white};
@@ -119,10 +224,13 @@ export type RecyclerAssetListReduxProps = {
       readonly [key: string]: boolean;
     };
   };
-  readonly settings: {
-    readonly nativeCurrency: string;
-  };
 };
+
+const NoStickyContainer = ({
+  children,
+}: {
+  children: JSX.Element;
+}): JSX.Element => children;
 
 export type RecyclerAssetListProps = {
   readonly isCoinListEdited: boolean;
@@ -133,7 +241,6 @@ export type RecyclerAssetListProps = {
     readonly alpha: (color: string, alpha: number) => string;
     readonly blueGreyDark: string;
   };
-  readonly nativeCurrency: string;
   readonly sections: readonly RecyclerAssetListSection[];
   readonly paddingBottom?: number;
   readonly isBlockingUpdate: boolean;
@@ -144,6 +251,11 @@ export type RecyclerAssetListProps = {
     readonly [key: string]: boolean;
   };
   readonly openSavings: boolean;
+  readonly openFamilies?: boolean;
+  readonly showcase?: boolean;
+  readonly disableStickyHeaders?: boolean;
+  readonly disableAutoScrolling?: boolean;
+  readonly disableRefreshControl?: boolean;
   readonly openSmallBalances: boolean;
 };
 
@@ -151,7 +263,6 @@ function RecyclerAssetList({
   isCoinListEdited,
   fetchData,
   colors,
-  nativeCurrency,
   sections,
   openInvestmentCards,
   openFamilyTabs,
@@ -161,6 +272,10 @@ function RecyclerAssetList({
   hideHeader,
   renderAheadOffset = deviceUtils.dimensions.height,
   setIsBlockingUpdate,
+  showcase,
+  disableStickyHeaders,
+  disableAutoScrolling,
+  disableRefreshControl,
   ...extras
 }: RecyclerAssetListProps): JSX.Element {
   const { ref, handleRef } = useRecyclerListViewRef();
@@ -198,7 +313,10 @@ function RecyclerAssetList({
         ]);
         if (section.collectibles) {
           section.data.forEach((item, index) => {
-            if (item.isHeader || openFamilyTabs[item.familyName]) {
+            if (
+              item.isHeader ||
+              openFamilyTabs[item.familyName + (showcase ? '-showcase' : '')]
+            ) {
               ctx.push({
                 familySectionIndex: index,
                 item: { ...item, ...section.perData },
@@ -228,7 +346,7 @@ function RecyclerAssetList({
       sectionsIndices,
       stickyComponentsIndices,
     };
-  }, [openFamilyTabs, sections]);
+  }, [openFamilyTabs, sections, showcase]);
 
   // Defines the position of the coinDivider, if it exists.
   const coinDividerIndex = useMemo<number>(() => {
@@ -305,7 +423,7 @@ function RecyclerAssetList({
     (e: unknown, f: unknown, offsetY: number) => {
       isCoinListEdited && checkEditStickyHeader(offsetY);
     },
-    [isCoinListEdited, checkEditStickyHeader]
+    [checkEditStickyHeader, isCoinListEdited]
   );
 
   const rowRenderer = React.useCallback(
@@ -316,7 +434,10 @@ function RecyclerAssetList({
       }
 
       if (type.index === ViewTypes.HEADER.index) {
-        return ViewTypes.HEADER.renderComponent({
+        return (showcase
+          ? ViewTypes.SHOWCASE_HEADER
+          : ViewTypes.HEADER
+        ).renderComponent({
           data,
           isCoinListEdited,
         });
@@ -349,7 +470,7 @@ function RecyclerAssetList({
       }
       return null;
     },
-    [isCoinListEdited, nativeCurrency, sections]
+    [isCoinListEdited, sections, showcase]
   );
 
   const animator = useMemo(
@@ -394,7 +515,10 @@ function RecyclerAssetList({
             };
           }
           return {
-            height: ViewTypes.HEADER.calculateHeight({
+            height: (showcase
+              ? ViewTypes.SHOWCASE_HEADER
+              : ViewTypes.HEADER
+            ).calculateHeight({
               hideHeader,
             }),
             index: ViewTypes.HEADER.index,
@@ -509,7 +633,8 @@ function RecyclerAssetList({
                 isHeader,
                 isOpen:
                   openFamilyTabs[
-                    sections[collectiblesIndex].data[familyIndex].familyName
+                    sections[collectiblesIndex].data[familyIndex].familyName +
+                      (showcase ? '-showcase' : '')
                   ],
               }),
               index: ViewTypes.UNIQUE_TOKEN_ROW.index,
@@ -548,19 +673,23 @@ function RecyclerAssetList({
     paddingBottom,
     sections,
     sectionsIndices,
+    showcase,
   ]);
 
   const scrollViewProps = useMemo(
-    (): Partial<ScrollViewProps> => ({
-      refreshControl: (
-        <StyledRefreshControl
-          onRefresh={handleRefresh}
-          refreshing={isRefreshing}
-          tintColor={colors.alpha(colors.blueGreyDark, 0.4)}
-        />
-      ),
-    }),
-    [handleRefresh, isRefreshing, colors]
+    (): Partial<ScrollViewProps> =>
+      disableRefreshControl
+        ? {}
+        : {
+            refreshControl: (
+              <StyledRefreshControl
+                onRefresh={handleRefresh}
+                refreshing={isRefreshing}
+                tintColor={colors.alpha(colors.blueGreyDark, 0.4)}
+              />
+            ),
+          },
+    [disableRefreshControl, handleRefresh, isRefreshing, colors]
   );
 
   const extendedState = useMemo(() => ({ sectionsIndices }), [sectionsIndices]);
@@ -571,17 +700,20 @@ function RecyclerAssetList({
 
   const scrollToOffset = useCallback(
     (offsetY: number, animated: boolean = false) =>
-      requestAnimationFrame(() => ref?.scrollToOffset(0, offsetY, animated)),
-    [ref]
+      requestAnimationFrame(
+        () => !disableAutoScrolling && ref?.scrollToOffset(0, offsetY, animated)
+      ),
+    [disableAutoScrolling, ref]
   );
-  useEffect(() => {
-    requestAnimationFrame(() => ref?.scrollToTop(false));
-  }, [nativeCurrency, ref]);
 
   const lastSections = usePrevious(sections) || sections;
   const lastOpenFamilyTabs = usePrevious(openFamilyTabs) || openFamilyTabs;
   const lastIsCoinListEdited =
     usePrevious(isCoinListEdited) || isCoinListEdited;
+
+  useEffect(() => {
+    lastIsCoinListEdited !== isCoinListEdited && checkEditStickyHeader(0);
+  }, [lastIsCoinListEdited, isCoinListEdited, checkEditStickyHeader]);
 
   useEffect(() => {
     let collectibles: RecyclerAssetListSection = {} as RecyclerAssetListSection;
@@ -607,8 +739,12 @@ function RecyclerAssetList({
       let i = 0;
       while (i < collectibles.data.length) {
         if (
-          openFamilyTabs[collectibles.data[i].familyName] === true &&
-          !lastOpenFamilyTabs[collectibles.data[i].familyName]
+          openFamilyTabs[
+            collectibles.data[i].familyName + (showcase ? '-showcase' : '')
+          ] === true &&
+          !lastOpenFamilyTabs[
+            collectibles.data[i].familyName + (showcase ? '-showcase' : '')
+          ]
         ) {
           const safeIndex = i;
           const safeCollectibles = collectibles;
@@ -703,21 +839,35 @@ function RecyclerAssetList({
     openFamilyTabs,
     paddingBottom,
     scrollToOffset,
+    showcase,
   ]);
+
+  const MaybeStickyContainer = disableStickyHeaders
+    ? NoStickyContainer
+    : StickyContainer;
+
+  const isInsideBottomSheet = !!useBottomSheet();
 
   return (
     <StyledContainer onLayout={onLayout}>
       {/* @ts-ignore */}
-      <StickyContainer
+      <MaybeStickyContainer
         overrideRowRenderer={stickyRowRenderer}
         stickyHeaderIndices={
-          isCoinListEdited ? defaultIndices : stickyComponentsIndices
+          disableStickyHeaders
+            ? []
+            : isCoinListEdited
+            ? defaultIndices
+            : stickyComponentsIndices
         }
       >
         {/* @ts-ignore */}
         <StyledRecyclerListView
           dataProvider={dataProvider}
           extendedState={extendedState}
+          {...(isInsideBottomSheet && {
+            externalScrollView: BottomSheetScrollView,
+          })}
           itemAnimator={animator}
           layoutProvider={layoutProvider}
           onScroll={onScroll}
@@ -727,7 +877,7 @@ function RecyclerAssetList({
           scrollViewProps={scrollViewProps}
           {...extras}
         />
-      </StickyContainer>
+      </MaybeStickyContainer>
       <View
         pointerEvents="none"
         ref={stickyCoinDividerRef}
@@ -754,10 +904,8 @@ export default connect(
       openSavings,
       openSmallBalances,
     },
-    settings: { nativeCurrency },
   }: RecyclerAssetListReduxProps) => ({
     isCoinListEdited,
-    nativeCurrency,
     openFamilyTabs,
     openInvestmentCards,
     openSavings,

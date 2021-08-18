@@ -1,7 +1,6 @@
 import UIKit
 
 import PanModal
-import React
 
 class BetterGestureRecognizerDelegateAdapter: NSObject, UIGestureRecognizerDelegate {
   var grd: UIGestureRecognizerDelegate
@@ -50,7 +49,7 @@ class PossiblyTouchesPassableUIView: UIView {
   //  // I don't really want to talk about it
   override func layoutSubviews() {
     super.layoutSubviews()
-    
+
     let outerView = self.config?.value(forKey: "outerView") as? UIView
     if (!(self.config!.value(forKey: "presentGlobally") as! Bool)) {
       if moved {
@@ -74,7 +73,7 @@ class PossiblyTouchesPassableUIView: UIView {
     }
   }
 
-  func makeOldClass() {
+  @objc func makeOldClass() {
     if self.oldClass != nil {
       let oldClassMem: AnyClass = self.oldClass!
       self.oldClass = nil
@@ -99,13 +98,13 @@ var PossiblyTouchesPassableUITransitionView: AnyClass?  = nil;
 
 class DiscoverSheetViewController: UIViewController, PanModalPresentable {
   func hide() {
-    
+
   }
-  
+
   func unhackParent() {
-    
+
   }
-  
+
   var observation: NSKeyValueObservation?
 
   @objc func jumpTo(long: NSNumber) {
@@ -249,7 +248,7 @@ class DiscoverSheetViewController: UIViewController, PanModalPresentable {
       self.config?.performSelector(inBackground: Selector.init(("callOnCrossMagicBoderFromTop")), with: nil)
     }
   }
-  
+
   var hacked = false
 
   public func hack() {

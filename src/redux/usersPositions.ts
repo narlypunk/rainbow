@@ -1,10 +1,15 @@
+import { isEmpty } from 'lodash';
 import { AnyAction } from 'redux';
 import { uniswapClient } from '../apollo/client';
 import {
   USER_HISTORY,
-  USER_MINTS_BUNRS_PER_PAIR,
+  USER_MINTS_BURNS_PER_PAIR,
   USER_POSITIONS,
 } from '../apollo/queries';
+import {
+  getUniswapPositions,
+  saveUniswapPositions,
+} from '@rainbow-me/handlers/localstorage/uniswap';
 import { AppDispatch, AppGetState } from '@rainbow-me/redux/store';
 import {
   BUSD_ADDRESS,
@@ -34,12 +39,12 @@ export interface TypeSpecificParameters {
   supplyBalanceUnderlying: string;
 }
 
-interface PositionsState {
-  [key: string]: any;
+export interface PositionsState {
+  [key: string]: UniswapPosition[];
 }
 
 interface ReturnMetrics {
-  hodleReturn: number; // difference in asset values t0 -> t1 with t0 deposit amounts
+  hodlReturn: number; // difference in asset values t0 -> t1 with t0 deposit amounts
   netReturn: number; // net return from t0 -> t1
   uniswapReturn: number; // netReturn - hodlReturn
   impLoss: number;
@@ -58,12 +63,28 @@ interface Position {
   token1PriceUSD: number;
 }
 
-export type StoredPositions = Position & ReturnMetrics;
+export type UniswapPosition = Position &
+  ReturnMetrics & { fees: { sum: number } };
 
 // --- fetching ----------------//
 
 // -- Constants --------------------------------------- //
 const UPDATE_POSITIONS = 'positions/UPDATE_POSITIONS';
+
+export const uniswapPositionsLoadState = () => async (
+  dispatch: AppDispatch,
+  getState: AppGetState
+) => {
+  const { accountAddress, network } = getState().settings;
+  try {
+    const positions = await getUniswapPositions(accountAddress, network);
+    dispatch({
+      payload: positions,
+      type: UPDATE_POSITIONS,
+    });
+    // eslint-disable-next-line no-empty
+  } catch (error) {}
+};
 
 function formatPricesForEarlyTimestamps(position: any): Position {
   if (position.timestamp < PRICE_DISCOVERY_START_TIMESTAMP) {
@@ -148,7 +169,7 @@ function getMetricsForPositionWindow(
 
   return {
     fees: difference_fees_usd,
-    hodleReturn: assetValueT1 - assetValueT0,
+    hodlReturn: assetValueT1 - assetValueT0,
     impLoss: imp_loss_usd,
     netReturn: netValueT1 - netValueT0,
     uniswapReturn: uniswap_return,
@@ -159,9 +180,9 @@ async function getPrincipalForUserPerPair(user: string, pairAddress: string) {
   let usd = 0;
   let amount0 = 0;
   let amount1 = 0;
-  // get all minst and burns to get principal amounts
+  // get all mints and burns to get principal amounts
   const results = await uniswapClient.query({
-    query: USER_MINTS_BUNRS_PER_PAIR,
+    query: USER_MINTS_BURNS_PER_PAIR,
     variables: {
       pair: pairAddress,
       user,
@@ -256,7 +277,7 @@ async function getLPReturnsOnPair(
         : snapshots[parseInt(index) + 1];
 
     const results = getMetricsForPositionWindow(positionT0, positionT1);
-    hodlReturn = hodlReturn + results.hodleReturn;
+    hodlReturn = hodlReturn + results.hodlReturn;
     netReturn = netReturn + results.netReturn;
     uniswapReturn = uniswapReturn + results.uniswapReturn;
     fees = fees + results.fees;
@@ -304,7 +325,7 @@ async function fetchSnapshots(account: string): Promise<Position[]> {
   return [];
 }
 
-async function fetchData(account: string): Promise<StoredPositions[]> {
+async function fetchData(account: string): Promise<UniswapPosition[]> {
   const priceOfEther = ethereumUtils.getEthPriceUnit();
 
   try {
@@ -341,17 +362,25 @@ async function fetchData(account: string): Promise<StoredPositions[]> {
 
 // -- Actions ---------------------------------------- //
 
-export const updatePositions = async (
+export const updatePositions = () => async (
   dispatch: AppDispatch,
   getState: AppGetState
 ) => {
-  const { accountAddress } = getState().settings;
+  const { accountAddress, network } = getState().settings;
+  const existingPositions = getState().usersPositions;
   const data = await fetchData(accountAddress);
+  if (!isEmpty(data)) {
+    const payload = {
+      ...existingPositions,
+      [accountAddress]: data,
+    };
 
-  dispatch({
-    payload: { [accountAddress]: data },
-    type: UPDATE_POSITIONS,
-  });
+    dispatch({
+      payload,
+      type: UPDATE_POSITIONS,
+    });
+    saveUniswapPositions(payload, accountAddress, network);
+  }
 };
 
 const INITIAL_STATE: PositionsState = {};

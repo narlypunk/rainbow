@@ -23,8 +23,11 @@ font.lineHeight = {
   normalTight: 18,
   normal: 20,
   loose: 21,
+  looserLoose: 22,
+  paragraphSmaller: 24,
   paragraphSmall: 25,
   looser: 26,
+  big: 27,
   loosest: 28,
   giant: 108,
 };

@@ -19,7 +19,7 @@ const Content = styled(Row).attrs({
   align: 'center',
   justify: 'space-between',
 })`
-  ${({ isCoinRow }) => padding(0, isCoinRow ? 16 : 19)};
+  ${({ isCoinRow }) => padding(0, isCoinRow ? 19 : 19)};
   background-color: ${({ theme: { colors } }) => colors.white};
   height: ${TokenFamilyHeaderHeight};
   width: 100%;
@@ -51,11 +51,11 @@ const TitleText = styled(TruncatedText).attrs({
   letterSpacing: 'roundedMedium',
   lineHeight: 'normal',
   size: 'large',
-  weight: 'bold',
+  weight: 'heavy',
 })`
   flex: 1;
   margin-bottom: 1;
-  padding-left: ${({ isShowcase }) => (!isShowcase ? 9 : 0)};
+  padding-left: ${({ isShowcase }) => (isShowcase ? 1 : 10)};
   padding-right: 9;
 `;
 
@@ -101,7 +101,7 @@ const TokenFamilyHeader = ({
           )}
         </RowWithMargins>
         <TitleText isShowcase={title === 'Showcase'}>{title}</TitleText>
-        <RowWithMargins align="center" margin={13}>
+        <RowWithMargins align="center" margin={10}>
           <Animated.View style={{ opacity: animation }}>
             <ChildrenAmountText>{childrenAmount}</ChildrenAmountText>
           </Animated.View>

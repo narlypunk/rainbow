@@ -1,10 +1,11 @@
 import { isNil } from 'lodash';
-import React, { Fragment } from 'react';
+import React from 'react';
 import ReactCoinIcon from 'react-coin-icon';
+import { View } from 'react-native';
 import styled from 'styled-components';
 import { useTheme } from '../../context/ThemeContext';
+import ChainBadge from './ChainBadge';
 import CoinIconFallback from './CoinIconFallback';
-import CoinIconIndicator from './CoinIconIndicator';
 import { useColorForAsset } from '@rainbow-me/hooks';
 import { getTokenMetadata, isETH, magicMemo } from '@rainbow-me/utils';
 
@@ -16,25 +17,26 @@ const StyledCoinIcon = styled(ReactCoinIcon)`
 
 const CoinIcon = ({
   address = 'eth',
+  badgeXPosition,
+  badgeYPosition,
+  badgeSize,
   forcedShadowColor,
-  isHidden,
-  isPinned,
   size = CoinIconSize,
   symbol = '',
+  type,
   ...props
 }) => {
-  const tokenMetadata = getTokenMetadata(address);
-  const color = useColorForAsset({ address });
+  const tokenMetadata = getTokenMetadata(props.mainnet_address || address);
+  const color = useColorForAsset({ address: props.mainnet_address || address });
   const { colors, isDarkMode } = useTheme();
-
-  const forceFallback = !isETH(address) && isNil(tokenMetadata);
+  const forceFallback =
+    !isETH(props.mainnet_address || address) && isNil(tokenMetadata);
 
   return (
-    <Fragment>
-      {(isPinned || isHidden) && <CoinIconIndicator isPinned={isPinned} />}
+    <View>
       <StyledCoinIcon
         {...props}
-        address={address}
+        address={props.mainnet_address || address}
         color={color}
         fallbackRenderer={CoinIconFallback}
         forceFallback={forceFallback}
@@ -47,7 +49,13 @@ const CoinIcon = ({
         size={size}
         symbol={symbol}
       />
-    </Fragment>
+      <ChainBadge
+        assetType={type}
+        badgeXPosition={badgeXPosition}
+        badgeYPosition={badgeYPosition}
+        size={badgeSize}
+      />
+    </View>
   );
 };
 
@@ -56,6 +64,7 @@ export default magicMemo(CoinIcon, [
   'isHidden',
   'isPinned',
   'size',
+  'type',
   'symbol',
   'shadowColor',
 ]);

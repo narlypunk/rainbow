@@ -1,11 +1,10 @@
 import { times } from 'lodash';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, LayoutAnimation } from 'react-native';
 import styled from 'styled-components';
 import { SORT_DIRECTION } from '../../hooks/useUniswapPools';
 import { ButtonPressAnimation } from '../animations';
 import { AssetListItemSkeleton } from '../asset-list';
-import UniswapLogo from '../icons/UniswapLogo';
 import { UniswapPoolListRow } from '../investment-cards';
 import { Centered, Column, Row } from '../layout';
 import { Text } from '../text';
@@ -13,12 +12,25 @@ import EdgeFade from './EdgeFade';
 import networkTypes from '@rainbow-me/helpers/networkTypes';
 import { useAccountSettings, useUniswapPools } from '@rainbow-me/hooks';
 
-const ITEM_HEIGHT = 60;
-const getItemLayout = (_, index) => ({
-  index,
-  length: ITEM_HEIGHT,
-  offset: ITEM_HEIGHT * index,
-});
+const INITIAL_PAGE_AMOUNT = 15;
+
+const DefaultShowMoreButton = ({ backgroundColor, color, onPress }) => (
+  <Row justify="center">
+    <ButtonPressAnimation onPress={onPress}>
+      <Row
+        backgroundColor={backgroundColor}
+        borderRadius={18}
+        height={36}
+        paddingHorizontal={12}
+        paddingTop={android ? 3 : 7}
+      >
+        <Text align="center" color={color} size="lmedium" weight="heavy">
+          Show more
+        </Text>
+      </Row>
+    </ButtonPressAnimation>
+  </Row>
+);
 
 const ErrorMessage = ({ colors, children }) => (
   <Centered marginVertical={50}>
@@ -58,7 +70,7 @@ const ListName = styled(Text)`
 const listData = [
   {
     id: 'liquidity',
-    name: 'Liquidity',
+    name: 'Pool size',
   },
   {
     id: 'annualized_fees',
@@ -74,19 +86,29 @@ const listData = [
   },
 ];
 
-const renderUniswapPoolListRow = ({ item }) => (
-  <UniswapPoolListRow assetType="uniswap" item={item} />
+const renderUniswapPoolListRow = item => (
+  <UniswapPoolListRow assetType="uniswap" item={item} key={item.address} />
 );
 
-export default function UniswapPools() {
+export default function UniswapPools({
+  token,
+  hideIfEmpty,
+  initialPageAmount = INITIAL_PAGE_AMOUNT,
+  ShowMoreButton = DefaultShowMoreButton,
+  forceShowAll,
+  alwaysShowMoreButton,
+}) {
   const listRef = useRef(null);
-  const { colors, isDarkMode } = useTheme();
+  const { colors } = useTheme();
   const { network } = useAccountSettings();
+  const [showAllState, setShowAll] = useState(false);
+  const showAll = forceShowAll === undefined ? showAllState : forceShowAll;
   const [selectedList, setSelectedList] = useState(listData[0].id);
   const [sortDirection, setSortDirection] = useState(SORT_DIRECTION.DESC);
-  const { pairs, error, is30DayEnabled } = useUniswapPools(
+  const { pairs, error, is30DayEnabled, isEmpty } = useUniswapPools(
     selectedList,
-    sortDirection
+    sortDirection,
+    token
   );
 
   const listDataFiltered = useMemo(() => {
@@ -95,6 +117,10 @@ export default function UniswapPools() {
     }
     return listData;
   }, [is30DayEnabled]);
+
+  const handleShowMorePress = useCallback(() => {
+    setShowAll(true);
+  }, []);
 
   const handleSwitchList = useCallback(
     (id, index) => {
@@ -146,35 +172,6 @@ export default function UniswapPools() {
     [colors, sortDirection]
   );
 
-  const renderTypeItem = useCallback(
-    ({ item: list, index }) => (
-      <PoolListButton
-        key={`list-${list.id}`}
-        onPress={() => handleSwitchList(list.id, index)}
-        selected={selectedList === list.id}
-        testID={`pools-list-${list.id}`}
-        titleColor={getTitleColor(selectedList === list.id, list.id)}
-      >
-        <Row>
-          <ListName
-            color={getTitleColor(selectedList === list.id, list.id)}
-            lineHeight="paragraphSmall"
-            size="lmedium"
-            weight="bold"
-          >
-            {list.name}{' '}
-            {selectedList === list.id
-              ? sortDirection === 'desc'
-                ? '􀄩'
-                : '􀄨'
-              : ''}
-          </ListName>
-        </Row>
-      </PoolListButton>
-    ),
-    [getTitleColor, handleSwitchList, selectedList, sortDirection]
-  );
-
   const allPairs = useMemo(() => {
     if (!pairs) return [];
 
@@ -196,30 +193,61 @@ export default function UniswapPools() {
     if (sortDirection === SORT_DIRECTION.ASC) {
       allPairs.sort((a, b) => a[selectedList] - b[selectedList]);
     }
+    if (!showAll) {
+      return allPairs.slice(0, initialPageAmount);
+    }
+
     return allPairs;
-  }, [allPairs, selectedList, sortDirection]);
+  }, [allPairs, initialPageAmount, selectedList, showAll, sortDirection]);
+
+  const renderTypeItem = useCallback(
+    ({ item: list, index }) => (
+      <PoolListButton
+        disabled={pairsSorted.length === 1 && selectedList === list.id}
+        key={`list-${list.id}`}
+        onPress={() => handleSwitchList(list.id, index)}
+        selected={selectedList === list.id}
+        testID={`pools-list-${list.id}`}
+        titleColor={getTitleColor(selectedList === list.id, list.id)}
+      >
+        <Row>
+          <ListName
+            color={getTitleColor(selectedList === list.id, list.id)}
+            lineHeight="paragraphSmall"
+            size="lmedium"
+            weight="bold"
+          >
+            {list.name}{' '}
+            {selectedList === list.id && pairsSorted.length !== 1
+              ? sortDirection === 'desc'
+                ? '􀄩'
+                : '􀄨'
+              : ''}
+          </ListName>
+        </Row>
+      </PoolListButton>
+    ),
+    [
+      getTitleColor,
+      handleSwitchList,
+      pairsSorted.length,
+      selectedList,
+      sortDirection,
+    ]
+  );
+
+  if (hideIfEmpty && (!pairs?.length || isEmpty)) {
+    return null;
+  }
 
   return (
-    <Column marginTop={32}>
+    <Column marginTop={25}>
       <Row marginBottom={12} paddingHorizontal={19}>
-        <UniswapLogo
-          borderRadius={8}
-          height={22}
-          imageStyle={{
-            height: 18,
-            marginBottom: 2.5,
-            marginRight: 1,
-            width: 16,
-          }}
-          marginRight={7}
-          marginTop={android ? 8 : 1}
-          shadowBlur={4.5}
-          shadowColor={isDarkMode ? colors.shadow : colors.purpleUniswap}
-          shadowOffset={{ height: 3, width: 0 }}
-          shadowOpacity={0.2}
-          width={22}
-        />
+        <Text size="large" style={{ marginTop: -4 }} weight="heavy">
+          🐋
+        </Text>
         <Text size="larger" testID="pools-section" weight="heavy">
+          {' '}
           Uniswap Pools
         </Text>
       </Row>
@@ -251,15 +279,18 @@ export default function UniswapPools() {
           Pools are disabled on Testnets
         </ErrorMessage>
       ) : pairsSorted?.length > 0 ? (
-        <FlatList
-          data={pairsSorted}
-          getItemLayout={getItemLayout}
-          keyExtractor={item => item.address}
-          removeClippedSubviews
-          renderItem={renderUniswapPoolListRow}
-          scrollsToTop={false}
-          windowSize={11}
-        />
+        <Fragment>
+          {pairsSorted.map(pair => renderUniswapPoolListRow(pair))}
+          {(!showAll || alwaysShowMoreButton) &&
+            initialPageAmount < allPairs.length && (
+              <ShowMoreButton
+                backgroundColor={colors.alpha(colors.blueGreyDark, 0.06)}
+                color={colors.alpha(colors.blueGreyDark, 0.6)}
+                onPress={handleShowMorePress}
+                paddingTop={10}
+              />
+            )}
+        </Fragment>
       ) : (
         times(3, index => (
           <AssetListItemSkeleton

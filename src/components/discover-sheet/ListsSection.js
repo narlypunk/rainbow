@@ -10,12 +10,11 @@ import { FlatList, LayoutAnimation } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import styled from 'styled-components';
 import { emitAssetRequest, emitChartsRequest } from '../../redux/explorer';
-import { fetchCoingeckoIds } from '../../redux/fallbackExplorer';
 import { DefaultTokenLists } from '../../references';
 import { ButtonPressAnimation } from '../animations';
 import { AssetListItemSkeleton } from '../asset-list';
 import { ListCoinRow } from '../coin-row';
-import { initialChartExpandedStateSheetHeight } from '../expanded-state/ChartExpandedState';
+import { initialChartExpandedStateSheetHeight } from '../expanded-state/asset/ChartExpandedState';
 import { Centered, Column, Flex, Row } from '../layout';
 import { Emoji, Text } from '../text';
 import EdgeFade from './EdgeFade';
@@ -32,10 +31,9 @@ import { ethereumUtils } from '@rainbow-me/utils';
 const COINGECKO_TRENDING_ENDPOINT =
   'https://api.coingecko.com/api/v3/search/trending';
 
-const fetchTrendingAddresses = async () => {
+const fetchTrendingAddresses = async coingeckoIds => {
   const trendingAddresses = [];
   try {
-    const coingeckoIds = await fetchCoingeckoIds();
     const request = await fetch(COINGECKO_TRENDING_ENDPOINT);
     const trending = await request.json();
     const idsToLookUp = trending.coins.map(coin => coin.item.id);
@@ -103,9 +101,14 @@ export default function ListSection() {
   const listRef = useRef(null);
   const initialized = useRef(false);
   const { allAssets } = useAccountAssets();
-  const { genericAssets } = useSelector(({ data: { genericAssets } }) => ({
-    genericAssets,
-  }));
+  const genericAssets = useSelector(
+    ({ data: { genericAssets } }) => genericAssets
+  );
+
+  const coingeckoIds = useSelector(
+    ({ additionalAssetsData: { coingeckoIds } }) => coingeckoIds
+  );
+
   const { colors } = useTheme();
   const listData = useMemo(() => DefaultTokenLists[network], [network]);
 
@@ -124,7 +127,7 @@ export default function ListSection() {
   const trendingListHandler = useRef(null);
 
   const updateTrendingList = useCallback(async () => {
-    const tokens = await fetchTrendingAddresses();
+    const tokens = await fetchTrendingAddresses(coingeckoIds);
     clearList('trending');
 
     dispatch(emitAssetRequest(tokens));
@@ -135,7 +138,7 @@ export default function ListSection() {
       () => updateTrendingList(),
       TRENDING_LIST_UPDATE_INTERVAL
     );
-  }, [clearList, dispatch, updateList]);
+  }, [clearList, coingeckoIds, dispatch, updateList]);
 
   const handleSwitchList = useCallback(
     (id, index) => {
@@ -221,20 +224,18 @@ export default function ListSection() {
     genericAssets,
     lists,
     nativeCurrency,
+    network,
     selectedList,
   ]);
 
   const handlePress = useCallback(
     item => {
-      navigate(
-        ios ? Routes.EXPANDED_ASSET_SHEET : Routes.EXPANDED_ASSET_SCREEN,
-        {
-          asset: item,
-          fromDiscover: true,
-          longFormHeight: initialChartExpandedStateSheetHeight,
-          type: 'token',
-        }
-      );
+      navigate(Routes.EXPANDED_ASSET_SHEET, {
+        asset: item,
+        fromDiscover: true,
+        longFormHeight: initialChartExpandedStateSheetHeight,
+        type: 'token',
+      });
     },
     [navigate]
   );

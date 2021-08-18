@@ -1,11 +1,15 @@
 import { find, matchesProperty } from 'lodash';
 import { useMemo } from 'react';
+import { useSelector } from 'react-redux';
 import useAccountAssets from './useAccountAssets';
 import useUniswapAssetsInWallet from './useUniswapAssetsInWallet';
 import { AssetTypes } from '@rainbow-me/entities';
 
 export default function useAsset(asset) {
   const { allAssets, collectibles } = useAccountAssets();
+  const genericAssets = useSelector(
+    ({ data: { genericAssets } }) => genericAssets
+  );
   const { uniswapAssetsInWallet } = useUniswapAssetsInWallet();
 
   return useMemo(() => {
@@ -15,16 +19,22 @@ export default function useAsset(asset) {
     if (asset.type === AssetTypes.token) {
       const uniswapAsset = find(
         uniswapAssetsInWallet,
-        matchesProperty('address', asset.address)
+        matchesProperty('address', asset.mainnet_address || asset.address)
       );
 
       matched = uniswapAsset
         ? uniswapAsset
-        : find(allAssets, matchesProperty('address', asset.address));
+        : find(
+            allAssets,
+            matchesProperty('address', asset.mainnet_address || asset.address)
+          );
+      if (!matched) {
+        matched = genericAssets?.[asset.mainnet_address || asset.address];
+      }
     } else if (asset.type === AssetTypes.nft) {
       matched = find(collectibles, matchesProperty('uniqueId', asset.uniqueId));
     }
 
     return matched || asset;
-  }, [allAssets, asset, collectibles, uniswapAssetsInWallet]);
+  }, [allAssets, asset, collectibles, genericAssets, uniswapAssetsInWallet]);
 }

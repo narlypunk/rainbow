@@ -14,6 +14,7 @@ import {
   useSwapIsSufficientBalance,
   useSwapIsSufficientLiquidity,
 } from '@rainbow-me/hooks';
+import { ETH_ADDRESS } from '@rainbow-me/references';
 import Routes from '@rainbow-me/routes';
 import { lightModeThemeColors, padding } from '@rainbow-me/styles';
 
@@ -34,16 +35,21 @@ const Container = styled(Centered)`
 
 export default function ConfirmExchangeButton({
   disabled,
+  doneLoadingReserves,
   inputAmount,
   isHighPriceImpact,
   onPressViewDetails,
   onSubmit,
+  testID,
   tradeDetails,
   type = ExchangeModalTypes.swap,
   ...props
 }) {
   const isSufficientBalance = useSwapIsSufficientBalance(inputAmount);
-  const isSufficientLiquidity = useSwapIsSufficientLiquidity(tradeDetails);
+  const isSufficientLiquidity = useSwapIsSufficientLiquidity(
+    doneLoadingReserves,
+    tradeDetails
+  );
   const { inputCurrency, outputCurrency } = useSwapCurrencies();
   const asset = outputCurrency ?? inputCurrency;
   const { isSufficientGas } = useGas();
@@ -74,12 +80,15 @@ export default function ConfirmExchangeButton({
 
   const colorForAsset = useColorForAsset(asset, undefined, true);
   const { buttonColor, shadowsForAsset } = useMemo(() => {
-    const color = isSwapDetailsRoute
-      ? colorForAsset
-      : makeColorMoreChill(
-          colorForAsset,
-          (isSwapDetailsRoute ? colors : darkModeThemeColors).light
-        );
+    const color =
+      asset.address === ETH_ADDRESS
+        ? colors.appleBlue
+        : isSwapDetailsRoute
+        ? colorForAsset
+        : makeColorMoreChill(
+            colorForAsset,
+            (isSwapDetailsRoute ? colors : darkModeThemeColors).light
+          );
 
     return {
       buttonColor: color,
@@ -88,7 +97,7 @@ export default function ConfirmExchangeButton({
         [0, 5, 15, isDarkMode ? colors.trueBlack : color, 0.4],
       ],
     };
-  }, [colorForAsset, colors, isDarkMode, isSwapDetailsRoute]);
+  }, [asset.address, colorForAsset, colors, isDarkMode, isSwapDetailsRoute]);
 
   let label = '';
   if (type === ExchangeModalTypes.deposit) {
@@ -109,10 +118,13 @@ export default function ConfirmExchangeButton({
     label = isSwapDetailsRoute ? 'Swap Anyway' : '􀕹 View Details';
   } else if (disabled) {
     label = 'Enter an Amount';
+  } else if (!doneLoadingReserves) {
+    label = 'Fetching Details...';
   }
 
   const isDisabled =
     disabled ||
+    !doneLoadingReserves ||
     !isSufficientBalance ||
     !isSufficientGas ||
     !isSufficientLiquidity;
@@ -140,6 +152,7 @@ export default function ConfirmExchangeButton({
             : shadows.default
         }
         showBiometryIcon={!isDisabled && !isHighPriceImpact}
+        testID={testID}
         {...props}
       />
     </Container>

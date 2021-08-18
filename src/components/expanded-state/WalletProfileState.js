@@ -8,8 +8,9 @@ import { BiometricButtonContent } from '../buttons';
 import ImageAvatar from '../contacts/ImageAvatar';
 import CopyTooltip from '../copy-tooltip';
 import { Centered, ColumnWithDividers } from '../layout';
+import { AvatarCircle } from '../profile';
 import { Text, TruncatedAddress } from '../text';
-import { ProfileAvatarButton, ProfileModal, ProfileNameInput } from './profile';
+import { ProfileModal, ProfileNameInput } from './profile';
 import {
   removeFirstEmojiFromString,
   returnStringFirstEmoji,
@@ -19,19 +20,18 @@ import { useAccountProfile } from '@rainbow-me/hooks';
 import { useNavigation } from '@rainbow-me/navigation';
 import Routes from '@rainbow-me/routes';
 import { margin, padding, position } from '@rainbow-me/styles';
-import { abbreviations } from '@rainbow-me/utils';
-
+import { profileUtils } from '@rainbow-me/utils';
 const WalletProfileAddressText = styled(TruncatedAddress).attrs(
   ({ theme: { colors } }) => ({
     align: 'center',
     color: colors.alpha(colors.blueGreyDark, 0.6),
-    firstSectionLength: abbreviations.defaultNumCharsPerSection,
-    size: 'lmedium',
+    firstSectionLength: 4,
+    size: 'large',
     truncationLength: 4,
-    weight: 'medium',
+    weight: 'bold',
   })
 )`
-  ${margin(9, 0, 5)};
+  ${margin(6, 0, 5)};
   width: 100%;
 `;
 
@@ -74,18 +74,31 @@ export default function WalletProfileState({
   isNewProfile,
   onCloseModal,
   profile,
+  forceColor,
 }) {
-  const nameEmoji = returnStringFirstEmoji(profile?.name);
+  const nameEmoji =
+    isNewProfile && !forceColor
+      ? profileUtils.addressHashedEmoji(address)
+      : returnStringFirstEmoji(profile?.name) ||
+        profileUtils.addressHashedEmoji(address);
+
   const { goBack, navigate } = useNavigation();
   const { accountImage } = useAccountProfile();
 
   const { colors } = useTheme();
-  const [color, setColor] = useState(
-    (profile.color !== null && profile.color) || getRandomColor()
-  );
 
+  const indexOfForceColor = colors.avatarBackgrounds.indexOf(forceColor);
+  const color = forceColor
+    ? forceColor
+    : isNewProfile && address
+    ? profileUtils.addressHashedColorIndex(address)
+    : profile.color !== null
+    ? profile.color
+    : isNewProfile
+    ? null
+    : (indexOfForceColor !== -1 && indexOfForceColor) || getRandomColor();
   const [value, setValue] = useState(
-    profile?.name ? removeFirstEmojiFromString(profile.name).join('') : ''
+    profile?.name ? removeFirstEmojiFromString(profile.name) : ''
   );
   const inputRef = useRef(null);
 
@@ -97,7 +110,11 @@ export default function WalletProfileState({
   }, [actionType, goBack, navigate]);
 
   const handleSubmit = useCallback(() => {
-    onCloseModal({ color, name: nameEmoji ? `${nameEmoji} ${value}` : value });
+    onCloseModal({
+      color:
+        typeof color === 'string' ? profileUtils.colorHexToIndex(color) : color,
+      name: nameEmoji ? `${nameEmoji} ${value}` : value,
+    });
     goBack();
     if (actionType === 'Create' && isNewProfile) {
       navigate(Routes.CHANGE_WALLET_SHEET);
@@ -128,23 +145,22 @@ export default function WalletProfileState({
         {accountImage ? (
           <ProfileImage image={accountImage} size="large" />
         ) : (
-          <>
-            <ProfileAvatarButton
-              color={color}
-              marginBottom={0}
-              radiusAndroid={32}
-              setColor={setColor}
-              value={nameEmoji || value}
+          // hide avatar if creating new wallet since we
+          // don't know what emoji / color it will be (determined by address)
+          (!isNewProfile || address) && (
+            <AvatarCircle
+              showcaseAccountColor={color}
+              showcaseAccountSymbol={nameEmoji}
             />
-            <Spacer />
-          </>
+          )
         )}
+        {isNewProfile && !address && <Spacer />}
         <ProfileNameInput
           onChange={setValue}
           onSubmitEditing={handleSubmit}
           placeholder="Name your wallet"
           ref={inputRef}
-          selectionColor={colors.avatarColor[color]}
+          selectionColor={colors.avatarBackgrounds[color]}
           testID="wallet-info-input"
           value={value}
         />
@@ -171,6 +187,7 @@ export default function WalletProfileState({
             color={colors.alpha(colors.blueGreyDark, 0.6)}
             letterSpacing="roundedMedium"
             weight="medium"
+            {...(android && { lineHeight: 21 })}
           >
             Cancel
           </WalletProfileButtonText>

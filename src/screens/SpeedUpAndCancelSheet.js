@@ -2,12 +2,19 @@ import { useRoute } from '@react-navigation/native';
 import { captureException } from '@sentry/react-native';
 import { BigNumber } from 'bignumber.js';
 import { get, isEmpty } from 'lodash';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, InteractionManager } from 'react-native';
+import React, {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import { ActivityIndicator, Alert } from 'react-native';
 import Animated, { useSharedValue, withSpring } from 'react-native-reanimated';
 import { useDispatch } from 'react-redux';
 import styled from 'styled-components';
 import Divider from '../components/Divider';
+import Spinner from '../components/Spinner';
 import { GasSpeedButton } from '../components/gas';
 import { Centered, Column, Row } from '../components/layout';
 import {
@@ -18,8 +25,8 @@ import {
   SlackSheet,
 } from '../components/sheet';
 import { Emoji, Text } from '../components/text';
-import { TransactionStatusTypes, TransactionTypes } from '@rainbow-me/entities';
-import { getTransaction, toHex } from '@rainbow-me/handlers/web3';
+import { TransactionStatusTypes } from '@rainbow-me/entities';
+import { getProviderForNetwork, toHex } from '@rainbow-me/handlers/web3';
 import {
   useAccountSettings,
   useBooleanState,
@@ -27,11 +34,10 @@ import {
   useGas,
   useKeyboardHeight,
 } from '@rainbow-me/hooks';
-import { loadWallet, sendTransaction } from '@rainbow-me/model/wallet';
+import { sendTransaction } from '@rainbow-me/model/wallet';
 import { useNavigation } from '@rainbow-me/navigation';
 import { getTitle, gweiToWei, weiToGwei } from '@rainbow-me/parsers';
 import { dataUpdateTransaction } from '@rainbow-me/redux/data';
-import { explorerInit } from '@rainbow-me/redux/explorer';
 import { updateGasPriceForSpeed } from '@rainbow-me/redux/gas';
 import { ethUnits } from '@rainbow-me/references';
 import { position } from '@rainbow-me/styles';
@@ -65,6 +71,13 @@ const ExtendedSheetBackground = styled.View`
   width: 100%;
 `;
 
+const LoadingSpinner = styled(android ? Spinner : ActivityIndicator).attrs(
+  ({ theme: { colors } }) => ({
+    color: colors.alpha(colors.blueGreyDark, 0.3),
+    size: 'large',
+  })
+)``;
+
 const AnimatedContainer = Animated.createAnimatedComponent(Container);
 const AnimatedSheet = Animated.createAnimatedComponent(CenteredSheet);
 
@@ -89,8 +102,6 @@ const text = {
   [SPEED_UP]: `This will speed up your pending transaction by replacing it. There’s still a chance your original transaction will confirm first!`,
 };
 
-let existingWallet;
-
 const calcMinGasPriceAllowed = prevGasPrice => {
   const prevGasPriceBN = new BigNumber(prevGasPrice);
 
@@ -104,7 +115,7 @@ const calcMinGasPriceAllowed = prevGasPrice => {
 
 export default function SpeedUpAndCancelSheet() {
   const { goBack } = useNavigation();
-  const { accountAddress } = useAccountSettings();
+  const { accountAddress, network } = useAccountSettings();
   const dispatch = useDispatch();
   const { height: deviceHeight } = useDimensions();
   const keyboardHeight = useKeyboardHeight();
@@ -120,15 +131,19 @@ export default function SpeedUpAndCancelSheet() {
   const {
     params: { type, tx },
   } = useRoute();
+  const [ready, setReady] = useState(false);
   const [isKeyboardVisible, showKeyboard, hideKeyboard] = useBooleanState();
   const [minGasPrice, setMinGasPrice] = useState(
     calcMinGasPriceAllowed(tx.gasPrice)
   );
   const fetchedTx = useRef(false);
-  const [gasLimit, setGasLimit] = useState(tx.gasLimit);
-  const [data, setData] = useState(tx.data);
-  const [value, setValue] = useState(tx.value);
-  const [nonce, setNonce] = useState(tx.nonce);
+  const [currentNetwork, setCurrentNetwork] = useState(null);
+  const [currentProvider, setCurrentProvider] = useState(null);
+  const [data, setData] = useState(null);
+  const [gasLimit, setGasLimit] = useState(null);
+  const [nonce, setNonce] = useState(null);
+  const [to, setTo] = useState(tx.to);
+  const [value, setValue] = useState(null);
 
   const getNewGasPrice = useCallback(() => {
     const rawGasPrice = get(selectedGasPrice, 'value.amount');
@@ -140,20 +155,6 @@ export default function SpeedUpAndCancelSheet() {
       : toHex(minGasPriceAllowed);
   }, [minGasPrice, selectedGasPrice]);
 
-  const reloadTransactions = useCallback(
-    transaction => {
-      if (transaction.type !== TransactionTypes.send) {
-        logger.log('Reloading zerion in 5!');
-        setTimeout(() => {
-          logger.log('Reloading tx from zerion NOW!');
-          dispatch(explorerInit());
-        }, 5000);
-        return;
-      }
-    },
-    [dispatch]
-  );
-
   const handleCancellation = useCallback(async () => {
     try {
       const gasPrice = getNewGasPrice();
@@ -164,6 +165,7 @@ export default function SpeedUpAndCancelSheet() {
       };
       const originalHash = tx.hash;
       const { hash } = await sendTransaction({
+        provider: currentProvider,
         transaction: cancelTxPayload,
       });
 
@@ -176,7 +178,13 @@ export default function SpeedUpAndCancelSheet() {
       updatedTx.status = TransactionStatusTypes.cancelling;
       updatedTx.title = getTitle(updatedTx);
       dispatch(
-        dataUpdateTransaction(originalHash, updatedTx, true, reloadTransactions)
+        dataUpdateTransaction(
+          originalHash,
+          updatedTx,
+          true,
+          null,
+          currentProvider
+        )
       );
     } catch (e) {
       logger.log('Error submitting cancel tx', e);
@@ -185,11 +193,11 @@ export default function SpeedUpAndCancelSheet() {
     }
   }, [
     accountAddress,
+    currentProvider,
     dispatch,
     getNewGasPrice,
     goBack,
     nonce,
-    reloadTransactions,
     tx,
   ]);
 
@@ -201,13 +209,12 @@ export default function SpeedUpAndCancelSheet() {
         gasLimit,
         gasPrice,
         nonce,
-        to: tx.to,
+        to,
         value,
       };
-      existingWallet = await loadWallet();
       const originalHash = tx.hash;
       const { hash } = await sendTransaction({
-        existingWallet,
+        provider: currentProvider,
         transaction: fasterTxPayload,
       });
       const updatedTx = { ...tx };
@@ -218,29 +225,81 @@ export default function SpeedUpAndCancelSheet() {
       }
       updatedTx.status = TransactionStatusTypes.speeding_up;
       updatedTx.title = getTitle(updatedTx);
-      dispatch(dataUpdateTransaction(originalHash, updatedTx, true));
+      dispatch(
+        dataUpdateTransaction(
+          originalHash,
+          updatedTx,
+          true,
+          null,
+          currentProvider
+        )
+      );
     } catch (e) {
       logger.log('Error submitting speed up tx', e);
     } finally {
       goBack();
     }
-  }, [data, dispatch, gasLimit, getNewGasPrice, goBack, nonce, tx, value]);
+  }, [
+    currentProvider,
+    data,
+    dispatch,
+    gasLimit,
+    getNewGasPrice,
+    goBack,
+    nonce,
+    to,
+    tx,
+    value,
+  ]);
+
+  // Set the network
+  useEffect(() => {
+    setCurrentNetwork(tx.network || network);
+  }, [network, tx.network]);
+
+  // Set the provider
+  useEffect(() => {
+    if (currentNetwork) {
+      startPollingGasPrices(currentNetwork);
+      const updateProvider = async () => {
+        const provider = await getProviderForNetwork(currentNetwork);
+        setCurrentProvider(provider);
+      };
+
+      updateProvider();
+
+      return () => {
+        stopPollingGasPrices();
+      };
+    }
+  }, [currentNetwork, startPollingGasPrices, stopPollingGasPrices]);
+
+  // Update gas limit
+  useEffect(() => {
+    if (!isEmpty(gasPrices) && gasLimit) {
+      updateTxFee(gasLimit, null, currentNetwork);
+      // Always default to fast
+      updateGasPriceOption('fast');
+    }
+  }, [currentNetwork, gasLimit, gasPrices, updateGasPriceOption, updateTxFee]);
 
   useEffect(() => {
-    InteractionManager.runAfterInteractions(async () => {
-      if (!fetchedTx.current) {
+    const init = async () => {
+      if (currentNetwork && currentProvider && !fetchedTx.current) {
         const txHash = tx.hash.split('-')[0];
         try {
           fetchedTx.current = true;
-          const txObj = await getTransaction(txHash);
+          const txObj = await currentProvider.getTransaction(txHash);
           if (txObj) {
             const hexGasLimit = toHex(txObj.gasLimit.toString());
             const hexGasPrice = toHex(txObj.gasPrice.toString());
             const hexValue = toHex(txObj.value.toString());
             const hexData = txObj.data;
+            setReady(true);
             setNonce(txObj.nonce);
             setValue(hexValue);
             setData(hexData);
+            setTo(txObj.to);
             setGasLimit(hexGasLimit);
             setMinGasPrice(calcMinGasPriceAllowed(hexGasPrice));
           }
@@ -250,24 +309,25 @@ export default function SpeedUpAndCancelSheet() {
           if (type === SPEED_UP) {
             Alert.alert(
               'Unable to speed up transaction',
-              'There was a problem while fetching the transaction data. Please try again...'
+              'There was a problem while fetching the transaction data. Please try again...',
+              [
+                {
+                  onPress: () => goBack(),
+                },
+              ]
             );
-            goBack();
           }
           // We don't care about this for cancellations
         }
-        startPollingGasPrices();
-        // Always default to fast
-        updateGasPriceOption('fast');
       }
-    });
-    return () => {
-      stopPollingGasPrices();
     };
+
+    init();
   }, [
+    currentNetwork,
+    currentProvider,
     goBack,
-    startPollingGasPrices,
-    stopPollingGasPrices,
+    network,
     tx,
     tx.gasLimit,
     tx.gasPrice,
@@ -335,93 +395,118 @@ export default function SpeedUpAndCancelSheet() {
           >
             <SheetHandleFixedToTop showBlur={false} />
             <Centered direction="column">
-              <Column marginBottom={12} marginTop={30}>
-                <Emoji
-                  name={type === CANCEL_TX ? 'skull_and_crossbones' : 'rocket'}
-                  size="biggest"
-                />
-              </Column>
-              <Column marginBottom={12}>
-                <Text
+              {!ready ? (
+                <Column
                   align="center"
-                  color={colors.dark}
-                  size="big"
-                  weight="bold"
+                  backgroundColor={colors.white}
+                  height={300}
+                  justify="center"
+                  marginBottom={12}
+                  marginTop={30}
                 >
-                  {title[type]}
-                </Text>
-              </Column>
-              <Column marginBottom={30} maxWidth={375} paddingHorizontal={42}>
-                <Text
-                  align="center"
-                  color={colors.alpha(colors.blueGreyDark, 0.5)}
-                  lineHeight="looser"
-                  size="large"
-                  weight="regular"
-                >
-                  {text[type]}
-                </Text>
-              </Column>
-              <Centered marginBottom={24}>
-                <Divider
-                  color={colors.rowDividerExtraLight}
-                  inset={[0, 143.5]}
-                />
-              </Centered>
-              {type === CANCEL_TX && (
-                <Column>
-                  <SheetActionButtonRow ignorePaddingBottom ignorePaddingTop>
-                    <SheetActionButton
-                      color={colors.red}
-                      fullWidth
-                      label="􀎽 Attempt Cancellation"
-                      onPress={handleCancellation}
-                      size="big"
-                      weight="bold"
-                    />
-                  </SheetActionButtonRow>
-                  <SheetActionButtonRow ignorePaddingBottom>
-                    <SheetActionButton
-                      color={colors.white}
-                      fullWidth
-                      label="Close"
-                      onPress={goBack}
-                      size="big"
-                      textColor={colors.alpha(colors.blueGreyDark, 0.8)}
-                      weight="bold"
-                    />
-                  </SheetActionButtonRow>
+                  <LoadingSpinner />
                 </Column>
+              ) : (
+                <Fragment>
+                  <Column marginBottom={12} marginTop={30}>
+                    <Emoji
+                      name={
+                        type === CANCEL_TX ? 'skull_and_crossbones' : 'rocket'
+                      }
+                      size="biggest"
+                    />
+                  </Column>
+                  <Column marginBottom={12}>
+                    <Text
+                      align="center"
+                      color={colors.dark}
+                      size="big"
+                      weight="heavy"
+                    >
+                      {title[type]}
+                    </Text>
+                  </Column>
+                  <Column
+                    marginBottom={30}
+                    maxWidth={375}
+                    paddingHorizontal={42}
+                  >
+                    <Text
+                      align="center"
+                      color={colors.alpha(colors.blueGreyDark, 0.5)}
+                      lineHeight="looser"
+                      size="large"
+                      weight="regular"
+                    >
+                      {text[type]}
+                    </Text>
+                  </Column>
+                  <Centered marginBottom={24}>
+                    <Divider
+                      color={colors.rowDividerExtraLight}
+                      inset={[0, 143.5]}
+                    />
+                  </Centered>
+                  {type === CANCEL_TX && (
+                    <Column>
+                      <SheetActionButtonRow
+                        ignorePaddingBottom
+                        ignorePaddingTop
+                      >
+                        <SheetActionButton
+                          color={colors.red}
+                          fullWidth
+                          label="􀎽 Attempt Cancellation"
+                          onPress={handleCancellation}
+                          size="big"
+                          weight="bold"
+                        />
+                      </SheetActionButtonRow>
+                      <SheetActionButtonRow ignorePaddingBottom>
+                        <SheetActionButton
+                          color={colors.white}
+                          fullWidth
+                          label="Close"
+                          onPress={goBack}
+                          size="big"
+                          textColor={colors.alpha(colors.blueGreyDark, 0.8)}
+                          weight="bold"
+                        />
+                      </SheetActionButtonRow>
+                    </Column>
+                  )}
+                  {type === SPEED_UP && (
+                    <SheetActionButtonRow ignorePaddingBottom ignorePaddingTop>
+                      <SheetActionButton
+                        color={colors.white}
+                        label="Cancel"
+                        onPress={goBack}
+                        size="big"
+                        textColor={colors.alpha(colors.blueGreyDark, 0.8)}
+                        weight="bold"
+                      />
+                      <SheetActionButton
+                        color={colors.appleBlue}
+                        label="􀎽 Confirm"
+                        onPress={handleSpeedUp}
+                        size="big"
+                        weight="bold"
+                      />
+                    </SheetActionButtonRow>
+                  )}
+                  <GasSpeedButtonContainer>
+                    <GasSpeedButton
+                      currentNetwork={currentNetwork}
+                      minGasPrice={minGasPrice}
+                      onCustomGasBlur={hideKeyboard}
+                      onCustomGasFocus={showKeyboard}
+                      options={['fast', 'custom']}
+                      theme={isDarkMode ? 'dark' : 'light'}
+                      type="transaction"
+                    />
+                  </GasSpeedButtonContainer>
+                </Fragment>
               )}
-              {type === SPEED_UP && (
-                <SheetActionButtonRow ignorePaddingBottom ignorePaddingTop>
-                  <SheetActionButton
-                    color={colors.white}
-                    label="Cancel"
-                    onPress={goBack}
-                    size="big"
-                    textColor={colors.alpha(colors.blueGreyDark, 0.8)}
-                    weight="bold"
-                  />
-                  <SheetActionButton
-                    color={colors.appleBlue}
-                    label="􀎽 Confirm"
-                    onPress={handleSpeedUp}
-                    size="big"
-                    weight="bold"
-                  />
-                </SheetActionButtonRow>
-              )}
-              <GasSpeedButtonContainer>
-                <GasSpeedButton
-                  minGasPrice={minGasPrice}
-                  onCustomGasBlur={hideKeyboard}
-                  onCustomGasFocus={showKeyboard}
-                  options={['fast', 'custom']}
-                  theme={isDarkMode ? 'dark' : 'light'}
-                  type="transaction"
-                />
-              </GasSpeedButtonContainer>
             </Centered>
           </AnimatedSheet>
         </Column>

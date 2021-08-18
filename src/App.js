@@ -1,4 +1,3 @@
-import PushNotificationIOS from '@react-native-community/push-notification-ios';
 import messaging from '@react-native-firebase/messaging';
 import analytics from '@segment/analytics-react-native';
 import * as Sentry from '@sentry/react-native';
@@ -15,19 +14,17 @@ import {
   StatusBar,
 } from 'react-native';
 import branch from 'react-native-branch';
-// eslint-disable-next-line import/default
-import CodePush from 'react-native-code-push';
-
 import {
+  IS_TESTING,
   REACT_APP_SEGMENT_API_WRITE_KEY,
   SENTRY_ENDPOINT,
   SENTRY_ENVIRONMENT,
 } from 'react-native-dotenv';
+
 // eslint-disable-next-line import/default
 import RNIOS11DeviceCheck from 'react-native-ios11-devicecheck';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
-import VersionNumber from 'react-native-version-number';
 import { connect, Provider } from 'react-redux';
 import PortalConsumer from './components/PortalConsumer';
 import { FlexItem } from './components/layout';
@@ -40,21 +37,18 @@ import {
 import { MainThemeProvider } from './context/ThemeContext';
 import { InitialRouteContext } from './context/initialRoute';
 import monitorNetwork from './debugging/network';
+import appEvents from './handlers/appEvents';
 import handleDeeplink from './handlers/deeplinks';
-import { staticSignatureLRU } from './handlers/imgix';
-import {
-  runKeychainIntegrityChecks,
-  runWalletBackupStatusChecks,
-} from './handlers/walletReadyEvents';
+import { runWalletBackupStatusChecks } from './handlers/walletReadyEvents';
 import RainbowContextWrapper from './helpers/RainbowContext';
 import { registerTokenRefreshListener, saveFCMToken } from './model/firebase';
 import * as keychain from './model/keychain';
 import { loadAddress } from './model/wallet';
 import { Navigation } from './navigation';
 import RoutesComponent from './navigation/Routes';
+import { explorerInit } from './redux/explorer';
 import { requestsForTopic } from './redux/requests';
 import store from './redux/store';
-import { walletConnectLoadState } from './redux/walletconnect';
 import Routes from '@rainbow-me/routes';
 import logger from 'logger';
 import { Portal } from 'react-native-cool-modals/Portal';
@@ -72,30 +66,9 @@ if (__DEV__) {
     dsn: SENTRY_ENDPOINT,
     enableAutoSessionTracking: true,
     environment: SENTRY_ENVIRONMENT,
-    release: `me.rainbow-${VersionNumber.appVersion}`,
   };
-
-  if (android) {
-    const dist = VersionNumber.buildVersion;
-    // In order for sourcemaps to work on android,
-    // the release needs to be named with the following format
-    // me.rainbow@1.0+4
-    const releaseName = `me.rainbow@${VersionNumber.appVersion}+${dist}`;
-    sentryOptions.release = releaseName;
-    // and we also need to manually set the dist to the versionCode value
-    sentryOptions.dist = dist.toString();
-  }
   Sentry.init(sentryOptions);
 }
-
-CodePush.getUpdateMetadata(CodePush.UpdateState.RUNNING).then(update => {
-  if (update) {
-    // eslint-disable-next-line import/no-deprecated
-    Sentry.setRelease(
-      `me.rainbow-${VersionNumber.appVersion}-codepush:${update.label}`
-    );
-  }
-});
 
 enableScreens();
 
@@ -115,6 +88,7 @@ class App extends Component {
     }
     this.identifyFlow();
     AppState.addEventListener('change', this.handleAppStateChange);
+    appEvents.on('transactionConfirmed', this.handleTransactionConfirmed);
     await this.handleInitializeAnalytics();
     saveFCMToken();
     this.onTokenRefreshListener = registerTokenRefreshListener();
@@ -123,8 +97,8 @@ class App extends Component {
       this.onRemoteNotification
     );
 
-    this.backgroundNotificationListener = messaging().onNotificationOpenedApp(
-      remoteMessage => {
+    this.backgroundNotificationListener = messaging().setBackgroundMessageHandler(
+      async remoteMessage => {
         setTimeout(() => {
           const topic = get(remoteMessage, 'data.topic');
           this.onPushNotificationOpened(topic);
@@ -144,7 +118,11 @@ class App extends Component {
       } else if (!params['+clicked_branch_link']) {
         // Indicates initialization success and some other conditions.
         // No link was opened.
-        return;
+        if (IS_TESTING === 'true') {
+          handleDeeplink(uri);
+        } else {
+          return;
+        }
       } else if (uri) {
         handleDeeplink(uri);
       }
@@ -170,7 +148,6 @@ class App extends Component {
     if (!prevProps.walletReady && this.props.walletReady) {
       // Everything we need to do after the wallet is ready goes here
       logger.sentry('✅ Wallet ready!');
-      runKeychainIntegrityChecks();
       runWalletBackupStatusChecks();
     }
   }
@@ -239,53 +216,25 @@ class App extends Component {
     });
   };
 
-  performBackgroundTasks = () => {
-    try {
-      // TEMP: When the app goes into the background, we wish to log the size of
-      //       Imgix's staticSignatureLru to benchmark performance.
-      //       https://github.com/rainbow-me/rainbow/pull/1529
-      const { capacity, size } = staticSignatureLRU;
-      const usage = size / capacity;
-      if (isNaN(usage)) {
-        throw new Error(`Expected number usage, encountered ${usage}.`);
-      }
-      logger.log(
-        `[Imgix]: Cached signature buffer is at ${size}/${capacity} (${
-          usage * 100
-        }%) on application background.`
-      );
-    } catch (e) {
-      logger.log(
-        `Failed to compute staticSignatureLRU usage on application background. (${e.message})`
-      );
-    }
-  };
-
   handleAppStateChange = async nextAppState => {
-    if (nextAppState === 'active') {
-      PushNotificationIOS.removeAllDeliveredNotifications();
-    }
-
-    // Restore WC connectors when going from BG => FG
-    if (this.state.appState === 'background' && nextAppState === 'active') {
-      store.dispatch(walletConnectLoadState());
-    }
-
     this.setState({ appState: nextAppState });
 
     analytics.track('State change', {
       category: 'app state',
       label: nextAppState,
     });
-
-    // After a successful state transition, perform state-defined operations:
-    if (nextAppState === 'background') {
-      this.performBackgroundTasks();
-    }
   };
 
   handleNavigatorRef = navigatorRef =>
     Navigation.setTopLevelNavigator(navigatorRef);
+
+  handleTransactionConfirmed = () => {
+    logger.log('Reloading all data from zerion in 10!');
+    setTimeout(() => {
+      logger.log('Reloading all data from zerion NOW!');
+      store.dispatch(explorerInit());
+    }, 10000);
+  };
 
   render = () => (
     <MainThemeProvider>
@@ -317,9 +266,6 @@ const AppWithRedux = connect(
   }
 )(App);
 
-const AppWithCodePush = CodePush({
-  checkFrequency: CodePush.CheckFrequency.ON_APP_RESUME,
-  installMode: CodePush.InstallMode.ON_NEXT_RESUME,
-})(() => <AppWithRedux store={store} />);
+const AppWithReduxStore = () => <AppWithRedux store={store} />;
 
-AppRegistry.registerComponent('Rainbow', () => AppWithCodePush);
+AppRegistry.registerComponent('Rainbow', () => AppWithReduxStore);
