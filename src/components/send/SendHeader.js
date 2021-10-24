@@ -1,7 +1,7 @@
 import { isHexString } from '@ethersproject/bytes';
 import { get, isEmpty, toLower } from 'lodash';
 import React, { Fragment, useCallback, useMemo } from 'react';
-import { ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Keyboard } from 'react-native';
 import styled from 'styled-components';
 import { useTheme } from '../../context/ThemeContext';
 import { useNavigation } from '../../navigation/Navigation';
@@ -77,6 +77,7 @@ export default function SendHeader({
   removeContact,
   showAssetList,
   userAccounts,
+  watchedAccounts,
 }) {
   const { setClipboard } = useClipboard();
   const { isSmallPhone, isTinyPhone } = useDimensions();
@@ -104,10 +105,10 @@ export default function SendHeader({
   }, [isValidAddress, recipient, setHexAddress, contact]);
 
   const userWallet = useMemo(() => {
-    return userAccounts.find(
+    return [...userAccounts, ...watchedAccounts].find(
       account => toLower(account.address) === toLower(recipient)
     );
-  }, [recipient, userAccounts]);
+  }, [recipient, userAccounts, watchedAccounts]);
 
   const handleNavigateToContact = useCallback(() => {
     let color = get(contact, 'color');
@@ -118,6 +119,7 @@ export default function SendHeader({
       nickname = isHexString(recipient) ? emoji : `${emoji} ${recipient}`;
     }
 
+    android && Keyboard.dismiss();
     navigate(Routes.MODAL_SCREEN, {
       additionalPadding: true,
       address: isEmpty(contact.address) ? recipient : contact.address,

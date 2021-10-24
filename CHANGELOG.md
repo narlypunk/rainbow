@@ -12,6 +12,86 @@ and this project adheres to [Semantic Versioning](http://semver.org/)
 
 ### Removed
 
+## [1.5.28](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.28)
+
+### Changed
+* Changed source of token list
+* ENS & Unstoppable validation fixes
+* Seperate out L2 explorer init
+
+## [1.5.27](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.27)
+
+### Added
+* Handle dropped transactions
+
+### Changed
+* Switched polygon gas api 
+* Autoscrolling & RLV jumping fixes
+
+## [1.5.26](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.26)
+
+### Added
+* Hide scam tokens
+* Support for .com style ENS domains and new Unstoppable TLDs
+
+### Changed
+* WC data safety check
+* Locked deps
+* Reanimated & Camera dimming refactorß
+* Search improvements, Fetch by volume
+* Savings native token fixes
+* Improved NFT family sorting
+
+## [1.5.25](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.25)
+
+### Changed
+* Improved App Error Boundary Reporting
+
+## [1.5.24](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.24)
+
+### Added
+* App Error Boundary
+
+### Changed
+* Send Full WC Errors 
+
+## [1.5.23](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.23)
+
+### Added
+* SVG support 
+
+### Changed
+* Enabled Arbitrum 
+* WalletConnect improvements
+* UniswapAssetsInWallet improvements
+
+
+## [1.5.22](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.22)
+
+
+### Changed
+* Discover performance improvements
+* Improved debug & transaction analytics
+
+## [1.5.21](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.21)
+
+
+### Changed
+* Added Opensea API key
+* Ethers pending transactions
+
+
+## [1.5.20](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.20)
+
+### Added
+* EIP-618 support
+* Support for multiple cloud backups 
+* Search ENS domains in Discover
+
+### Changed
+* Walletconnect speed improvements
+* SVG bug fixes
+
 
 ## [1.5.19](https://github.com/rainbow-me/rainbow/releases/tag/v1.5.19)
 

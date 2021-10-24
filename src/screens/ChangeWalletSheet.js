@@ -1,4 +1,5 @@
 import { useRoute } from '@react-navigation/core';
+import analytics from '@segment/analytics-react-native';
 import { captureException } from '@sentry/react-native';
 import { get, toLower } from 'lodash';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -9,7 +10,7 @@ import styled from 'styled-components';
 import Divider from '../components/Divider';
 import { ButtonPressAnimation } from '../components/animations';
 import WalletList from '../components/change-wallet/WalletList';
-import { Column } from '../components/layout';
+import { Centered, Column, Row } from '../components/layout';
 import { Sheet, SheetTitle } from '../components/sheet';
 import { Text } from '../components/text';
 import { backupUserDataIntoCloud } from '../handlers/cloudBackup';
@@ -51,27 +52,21 @@ const walletRowHeight = 59;
 const maxListHeight = deviceHeight - 220;
 
 const EditButton = styled(ButtonPressAnimation).attrs(({ editMode }) => ({
-  radiusAndroid: 24,
   scaleTo: 0.96,
   wrapperStyle: {
-    alignSelf: 'flex-end',
-    height: 40,
-    marginRight: 7,
     width: editMode ? 70 : 58,
   },
 }))`
-  padding: 12px;
   ${ios
     ? `
-  position: absolute;
-  right: 7px;
-  top: 6px;
-  `
+    position: absolute;
+    right: 20px;
+    top: -11px;`
     : `
     position: relative;
-    right: 0px;
-    top: -10px;
-    z-index: 99999;
+    right: 20px;
+    top: 6px;
+    elevation: 10;
   `}
 `;
 
@@ -134,14 +129,14 @@ export default function ChangeWalletSheet() {
 
   const walletRowCount = useMemo(() => getWalletRowCount(wallets), [wallets]);
 
-  let headerHeight = android ? 0 : 30;
+  let headerHeight = 30;
   let listHeight =
     walletRowHeight * walletRowCount +
-    (!watchOnly ? footerHeight + listPaddingBottom : 0);
+    (!watchOnly ? footerHeight + listPaddingBottom : android ? 20 : 0);
   let scrollEnabled = false;
   let showDividers = false;
   if (listHeight > maxListHeight) {
-    headerHeight = android ? 0 : 40;
+    headerHeight = 40;
     listHeight = maxListHeight;
     scrollEnabled = true;
     showDividers = true;
@@ -232,6 +227,9 @@ export default function ChangeWalletSheet() {
               if (args) {
                 const newWallets = { ...wallets };
                 if ('name' in args) {
+                  analytics.track('Tapped "Done" after editing wallet', {
+                    wallet_label: args.name,
+                  });
                   asyncSome(
                     newWallets[walletId].addresses,
                     async (account, index) => {
@@ -256,11 +254,14 @@ export default function ChangeWalletSheet() {
                     }
                   );
                   await dispatch(walletsUpdate(newWallets));
+                } else {
+                  analytics.track('Tapped "Cancel" after editing wallet');
                 }
               }
             },
             profile: {
               color: account.color,
+              image: account.image || ``,
               name: account.label || ``,
             },
             type: 'wallet_profile',
@@ -310,8 +311,10 @@ export default function ChangeWalletSheet() {
         buttonIndex => {
           if (buttonIndex === 0) {
             // Edit wallet
+            analytics.track('Tapped "Edit Wallet"');
             renameWallet(walletId, address);
           } else if (buttonIndex === 1) {
+            analytics.track('Tapped "Delete Wallet"');
             // Delete wallet with confirmation
             showActionSheetWithOptions(
               {
@@ -322,9 +325,9 @@ export default function ChangeWalletSheet() {
               },
               async buttonIndex => {
                 if (buttonIndex === 0) {
+                  analytics.track('Tapped "Delete Wallet" (final confirm)');
                   await deleteWallet(walletId, address);
                   ReactNativeHapticFeedback.trigger('notificationSuccess');
-
                   if (!isLastAvailableWallet) {
                     await cleanUpWalletKeys();
                     goBack();
@@ -368,6 +371,7 @@ export default function ChangeWalletSheet() {
 
   const onPressAddAccount = useCallback(async () => {
     try {
+      analytics.track('Tapped "Create a new wallet"');
       if (creatingWallet.current) return;
       creatingWallet.current = true;
 
@@ -489,25 +493,37 @@ export default function ChangeWalletSheet() {
   ]);
 
   const onPressImportSeedPhrase = useCallback(() => {
+    analytics.track('Tapped "Add an existing wallet"');
     navigate(Routes.IMPORT_SEED_PHRASE_FLOW);
   }, [navigate]);
+
+  const onPressEditMode = useCallback(() => {
+    analytics.track('Tapped "Edit"');
+    setEditMode(e => !e);
+  }, []);
 
   return (
     <Sheet borderRadius={30}>
       {android && <Whitespace />}
       <Column height={headerHeight} justify="space-between">
-        <SheetTitle>Wallets</SheetTitle>
+        <Centered>
+          <SheetTitle>Wallets</SheetTitle>
+
+          {!watchOnly && (
+            <Row style={{ position: 'absolute', right: 0 }}>
+              <EditButton editMode={editMode} onPress={onPressEditMode}>
+                <EditButtonLabel editMode={editMode}>
+                  {editMode ? 'Done' : 'Edit'}
+                </EditButtonLabel>
+              </EditButton>
+            </Row>
+          )}
+        </Centered>
         {showDividers && (
           <Divider color={colors.rowDividerExtraLight} inset={[0, 15]} />
         )}
       </Column>
-      {!watchOnly && (
-        <EditButton editMode={editMode} onPress={() => setEditMode(e => !e)}>
-          <EditButtonLabel editMode={editMode}>
-            {editMode ? 'Done' : 'Edit'}
-          </EditButtonLabel>
-        </EditButton>
-      )}
+
       <WalletList
         accountAddress={currentAddress}
         allWallets={walletsWithBalancesAndNames}

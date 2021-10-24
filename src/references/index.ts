@@ -14,6 +14,10 @@ export {
   defiSdkAdapterRegistryABI,
   DEFI_SDK_ADAPTER_REGISTRY_ADDRESS,
 } from './defisdk';
+export {
+  signatureRegistryABI,
+  SIGNATURE_REGISTRY_ADDRESS,
+} from './signatureRegistry';
 export { default as emojis } from './emojis.json';
 export { default as erc20ABI } from './erc20-abi.json';
 export { default as ethUnits } from './ethereum-units.json';
@@ -43,7 +47,7 @@ export {
 } from './wyre';
 
 // Block Explorers
-export const ARBITRUM_BLOCK_EXPLORER_URL = 'explorer.arbitrum.io';
+export const ARBITRUM_BLOCK_EXPLORER_URL = 'arbiscan.io';
 export const POLYGON_BLOCK_EXPLORER_URL = 'polygonscan.com';
 export const OPTIMISM_BLOCK_EXPLORER_URL = 'optimistic.etherscan.io';
 

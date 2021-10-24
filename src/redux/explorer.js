@@ -1,5 +1,5 @@
 import { concat, isEmpty, isNil, keys, toLower } from 'lodash';
-import { DATA_API_KEY, DATA_ORIGIN } from 'react-native-dotenv';
+import { DATA_API_KEY, DATA_ENDPOINT, DATA_ORIGIN } from 'react-native-dotenv';
 import io from 'socket.io-client';
 // eslint-disable-next-line import/no-cycle
 import { arbitrumExplorerInit } from './arbitrumExplorer';
@@ -84,7 +84,7 @@ const messages = {
 
 // -- Actions ---------------------------------------- //
 const createSocket = endpoint =>
-  io(`wss://api-v4.zerion.io/${endpoint}`, {
+  io(`${DATA_ENDPOINT || 'wss://api-v4.zerion.io'}/${endpoint}`, {
     extraHeaders: { origin: DATA_ORIGIN },
     query: {
       api_token: `${DATA_API_KEY}`,
@@ -410,7 +410,18 @@ const listenOnAssetMessages = socket => dispatch => {
   });
 };
 
-const listenOnAddressMessages = socket => (dispatch, getState) => {
+export const explorerInitL2 = () => (dispatch, getState) => {
+  if (getState().settings.network === NetworkTypes.mainnet) {
+    // Start watching arbitrum assets
+    dispatch(arbitrumExplorerInit());
+    // Start watching optimism assets
+    dispatch(optimismExplorerInit());
+    // Start watching polygon assets
+    dispatch(polygonExplorerInit());
+  }
+};
+
+const listenOnAddressMessages = socket => dispatch => {
   socket.on(messages.ADDRESS_PORTFOLIO.RECEIVED, message => {
     dispatch(portfolioReceived(message));
   });
@@ -442,14 +453,7 @@ const listenOnAddressMessages = socket => (dispatch, getState) => {
         '😬 Cancelling fallback data provider listener. Zerion is good!'
       );
       dispatch(disableFallbackIfNeeded());
-      if (getState().settings.network === NetworkTypes.mainnet) {
-        // Start watching arbitrum assets
-        dispatch(arbitrumExplorerInit());
-        // Start watching optimism assets
-        dispatch(optimismExplorerInit());
-        // Start watching polygon assets
-        dispatch(polygonExplorerInit());
-      }
+      dispatch(explorerInitL2());
     }
   });
 

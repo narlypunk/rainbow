@@ -1,3 +1,4 @@
+import analytics from '@segment/analytics-react-native';
 import React, { useCallback, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useTheme } from '../../context/ThemeContext';
@@ -21,6 +22,7 @@ import { useNavigation } from '@rainbow-me/navigation';
 import Routes from '@rainbow-me/routes';
 import { margin, padding, position } from '@rainbow-me/styles';
 import { profileUtils } from '@rainbow-me/utils';
+
 const WalletProfileAddressText = styled(TruncatedAddress).attrs(
   ({ theme: { colors } }) => ({
     align: 'center',
@@ -31,7 +33,7 @@ const WalletProfileAddressText = styled(TruncatedAddress).attrs(
     weight: 'bold',
   })
 )`
-  ${margin(6, 0, 5)};
+  ${margin(android ? 0 : 6, 0, android ? 0 : 5)};
   width: 100%;
 `;
 
@@ -102,14 +104,18 @@ export default function WalletProfileState({
   );
   const inputRef = useRef(null);
 
+  const profileImage = accountImage || profile.image;
+
   const handleCancel = useCallback(() => {
     goBack();
+    analytics.track('Tapped "Cancel" on Wallet Profile modal');
     if (actionType === 'Create') {
       navigate(Routes.CHANGE_WALLET_SHEET);
     }
   }, [actionType, goBack, navigate]);
 
   const handleSubmit = useCallback(() => {
+    analytics.track('Tapped "Submit" on Wallet Profile modal');
     onCloseModal({
       color:
         typeof color === 'string' ? profileUtils.colorHexToIndex(color) : color,
@@ -138,12 +144,12 @@ export default function WalletProfileState({
     <WalletProfileModal>
       <Centered
         direction="column"
-        paddingBottom={30}
+        paddingBottom={android ? 15 : 30}
         testID="wallet-info-modal"
         width="100%"
       >
-        {accountImage ? (
-          <ProfileImage image={accountImage} size="large" />
+        {profileImage ? (
+          <ProfileImage image={profileImage} size="large" />
         ) : (
           // hide avatar if creating new wallet since we
           // don't know what emoji / color it will be (determined by address)

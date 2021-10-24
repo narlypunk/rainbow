@@ -99,7 +99,7 @@ export const isTestnet = network => {
  * @desc returns a web3 provider for the specified network
  * @param {String} network
  */
-export const getProviderForNetwork = async network => {
+export const getProviderForNetwork = async (network = NetworkTypes.mainnet) => {
   if (networkProviders[network]) {
     return networkProviders[network];
   }
@@ -129,15 +129,6 @@ export const getProviderForNetwork = async network => {
 
 export const sendRpcCall = async (payload, provider = null) =>
   (provider || web3Provider).send(payload.method, payload.params);
-
-export const getTransactionReceipt = (txHash, provider = null) =>
-  sendRpcCall(
-    {
-      method: 'eth_getTransactionReceipt',
-      params: [txHash],
-    },
-    provider
-  );
 
 /**
  * @desc check if hex string

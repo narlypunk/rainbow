@@ -40,8 +40,8 @@ class TransactionListView: UIView, UITableViewDelegate, UITableViewDataSource {
   func activelyWaitToPresentDiscoverSheetBack(controller: DiscoverSheetViewController) {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
       if (self.window?.rootViewController?.presentedViewController == nil) {
+        controller.moved = false;
         controller.hacked = false;
-        moved = false;
         self.window?.rootViewController?.present(controller, animated: true)
       } else {
         self.activelyWaitToPresentDiscoverSheetBack(controller: controller)
@@ -123,6 +123,10 @@ class TransactionListView: UIView, UITableViewDelegate, UITableViewDataSource {
   @objc var accountAddress: String? = nil {
     didSet {
       header.accountAddress.text = accountAddress
+      header.isAccessibilityElement = true
+      if accountAddress != nil {
+        header.accessibilityIdentifier = "profileAddress-\(accountAddress!)"
+      }
       header.accountAddress.addCharacterSpacing(kernValue: 0.5)
       header.accountAddress.sizeToFit()
       let dropdownMarginLeft: CGFloat = 6.7

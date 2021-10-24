@@ -27,6 +27,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import { connect, Provider } from 'react-redux';
 import PortalConsumer from './components/PortalConsumer';
+import ErrorBoundary from './components/error-boundary/ErrorBoundary';
 import { FlexItem } from './components/layout';
 import { OfflineToast } from './components/toasts';
 import {
@@ -46,9 +47,10 @@ import * as keychain from './model/keychain';
 import { loadAddress } from './model/wallet';
 import { Navigation } from './navigation';
 import RoutesComponent from './navigation/Routes';
-import { explorerInit } from './redux/explorer';
+import { explorerInitL2 } from './redux/explorer';
 import { requestsForTopic } from './redux/requests';
 import store from './redux/store';
+import { walletConnectLoadState } from './redux/walletconnect';
 import Routes from '@rainbow-me/routes';
 import logger from 'logger';
 import { Portal } from 'react-native-cool-modals/Portal';
@@ -217,6 +219,10 @@ class App extends Component {
   };
 
   handleAppStateChange = async nextAppState => {
+    // Restore WC connectors when going from BG => FG
+    if (this.state.appState === 'background' && nextAppState === 'active') {
+      store.dispatch(walletConnectLoadState());
+    }
     this.setState({ appState: nextAppState });
 
     analytics.track('State change', {
@@ -229,31 +235,35 @@ class App extends Component {
     Navigation.setTopLevelNavigator(navigatorRef);
 
   handleTransactionConfirmed = () => {
-    logger.log('Reloading all data from zerion in 10!');
+    logger.log('Reloading all data from L2 explorers in 10!');
     setTimeout(() => {
-      logger.log('Reloading all data from zerion NOW!');
-      store.dispatch(explorerInit());
+      logger.log('Reloading all data from L2 explorers NOW!');
+      store.dispatch(explorerInitL2());
     }, 10000);
   };
 
   render = () => (
     <MainThemeProvider>
       <RainbowContextWrapper>
-        <Portal>
-          <SafeAreaProvider>
-            <Provider store={store}>
-              <FlexItem>
-                {this.state.initialRoute && (
-                  <InitialRouteContext.Provider value={this.state.initialRoute}>
-                    <RoutesComponent ref={this.handleNavigatorRef} />
-                    <PortalConsumer />
-                  </InitialRouteContext.Provider>
-                )}
-                <OfflineToast />
-              </FlexItem>
-            </Provider>
-          </SafeAreaProvider>
-        </Portal>
+        <ErrorBoundary>
+          <Portal>
+            <SafeAreaProvider>
+              <Provider store={store}>
+                <FlexItem>
+                  {this.state.initialRoute && (
+                    <InitialRouteContext.Provider
+                      value={this.state.initialRoute}
+                    >
+                      <RoutesComponent ref={this.handleNavigatorRef} />
+                      <PortalConsumer />
+                    </InitialRouteContext.Provider>
+                  )}
+                  <OfflineToast />
+                </FlexItem>
+              </Provider>
+            </SafeAreaProvider>
+          </Portal>
+        </ErrorBoundary>
       </RainbowContextWrapper>
     </MainThemeProvider>
   );

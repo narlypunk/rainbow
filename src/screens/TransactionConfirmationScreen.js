@@ -3,7 +3,7 @@ import analytics from '@segment/analytics-react-native';
 import { captureException } from '@sentry/react-native';
 import BigNumber from 'bignumber.js';
 import lang from 'i18n-js';
-import { isEmpty, isNil, omit } from 'lodash';
+import { isEmpty, isNil, omit, toLower } from 'lodash';
 import React, {
   Fragment,
   useCallback,
@@ -176,9 +176,9 @@ export default function TransactionConfirmationScreen() {
   const [isSufficientGasChecked, setIsSufficientGasChecked] = useState(false);
   const [nativeAsset, setNativeAsset] = useState(null);
   const { height: deviceHeight } = useDimensions();
-  const { wallets, walletNames } = useWallets();
+  const { wallets, walletNames, switchToWalletWithAddress } = useWallets();
   const balances = useWalletBalances(wallets);
-  const { nativeCurrency } = useAccountSettings();
+  const { accountAddress, nativeCurrency } = useAccountSettings();
   const keyboardHeight = useKeyboardHeight();
   const dispatch = useDispatch();
   const { params: routeParams } = useRoute();
@@ -217,7 +217,7 @@ export default function TransactionConfirmationScreen() {
   const walletConnector = walletConnectors[peerId];
 
   const accountInfo = useMemo(() => {
-    const address = walletConnector._accounts?.[0];
+    const address = walletConnector?._accounts?.[0];
     const selectedWallet = findWalletWithAccount(wallets, address);
     const profileInfo = getAccountProfileInfo(
       selectedWallet,
@@ -229,7 +229,7 @@ export default function TransactionConfirmationScreen() {
       ...profileInfo,
       address,
     };
-  }, [network, walletConnector._accounts, walletNames, wallets]);
+  }, [network, walletConnector?._accounts, walletNames, wallets]);
 
   const isL2 = useMemo(() => {
     return isL2Network(network);
@@ -237,9 +237,9 @@ export default function TransactionConfirmationScreen() {
 
   useEffect(() => {
     setNetwork(
-      ethereumUtils.getNetworkFromChainId(Number(walletConnector._chainId))
+      ethereumUtils.getNetworkFromChainId(Number(walletConnector?._chainId))
     );
-  }, [walletConnector._chainId]);
+  }, [walletConnector?._chainId]);
 
   useEffect(() => {
     const initProvider = async () => {
@@ -388,36 +388,59 @@ export default function TransactionConfirmationScreen() {
     ]
   );
 
-  const onCancel = useCallback(async () => {
-    try {
-      closeScreen(true);
-      if (callback) {
-        callback({ error: 'User cancelled the request' });
-      }
-      setTimeout(async () => {
-        if (requestId) {
-          await dispatch(walletConnectSendStatus(peerId, requestId, null));
-          dispatch(removeRequest(requestId));
+  const onCancel = useCallback(
+    async error => {
+      try {
+        closeScreen(true);
+        if (callback) {
+          callback({ error: error || 'User cancelled the request' });
         }
-        const rejectionType =
-          method === SEND_TRANSACTION ? 'transaction' : 'signature';
-        analytics.track(`Rejected WalletConnect ${rejectionType} request`);
-      }, 300);
-    } catch (error) {
-      logger.log('error while handling cancel request', error);
-      closeScreen(true);
-      Alert.alert(lang.t('wallet.transaction.alert.cancelled_transaction'));
+        setTimeout(async () => {
+          if (requestId) {
+            await dispatch(
+              walletConnectSendStatus(peerId, requestId, {
+                error: error || 'User cancelled the request',
+              })
+            );
+            dispatch(removeRequest(requestId));
+          }
+          const rejectionType =
+            method === SEND_TRANSACTION ? 'transaction' : 'signature';
+          analytics.track(`Rejected WalletConnect ${rejectionType} request`);
+        }, 300);
+      } catch (error) {
+        logger.log('error while handling cancel request', error);
+        closeScreen(true);
+        Alert.alert(lang.t('wallet.transaction.alert.cancelled_transaction'));
+      }
+    },
+    [
+      callback,
+      closeScreen,
+      dispatch,
+      method,
+      peerId,
+      removeRequest,
+      requestId,
+      walletConnectSendStatus,
+    ]
+  );
+
+  const onPressCancel = useCallback(() => onCancel(), [onCancel]);
+
+  useEffect(() => {
+    if (!peerId || !walletConnector) {
+      Alert.alert(
+        'Connection Expired',
+        'Please go back to the dapp and reconnect it to your wallet',
+        [
+          {
+            onPress: () => onCancel(),
+          },
+        ]
+      );
     }
-  }, [
-    callback,
-    closeScreen,
-    dispatch,
-    method,
-    peerId,
-    removeRequest,
-    requestId,
-    walletConnectSendStatus,
-  ]);
+  }, [goBack, onCancel, peerId, walletConnector]);
 
   const calculateGasLimit = useCallback(async () => {
     calculatingGasLimit.current = true;
@@ -570,7 +593,7 @@ export default function TransactionConfirmationScreen() {
     }
 
     txPayloadUpdated = omit(txPayloadUpdated, ['from', 'gas']);
-    let result = null;
+    let response = null;
 
     try {
       const existingWallet = await loadWallet(
@@ -579,13 +602,13 @@ export default function TransactionConfirmationScreen() {
         provider
       );
       if (sendInsteadOfSign) {
-        result = await sendTransaction({
+        response = await sendTransaction({
           existingWallet,
           provider,
           transaction: txPayloadUpdated,
         });
       } else {
-        result = await signTransaction({
+        response = await signTransaction({
           existingWallet,
           provider,
           transaction: txPayloadUpdated,
@@ -598,12 +621,15 @@ export default function TransactionConfirmationScreen() {
       );
     }
 
+    const { result, error } = response;
     if (result) {
       if (callback) {
         callback({ result: result.hash });
       }
+      let txSavedInCurrentWallet = false;
+      let txDetails = null;
       if (sendInsteadOfSign) {
-        const txDetails = {
+        txDetails = {
           amount: displayDetails?.request?.value ?? 0,
           asset: nativeAsset || displayDetails?.request?.asset,
           dappName,
@@ -615,14 +641,27 @@ export default function TransactionConfirmationScreen() {
           nonce: result.nonce,
           to: displayDetails?.request?.to,
         };
-        dispatch(dataAddNewTransaction(txDetails, null, false, provider));
+        if (toLower(accountAddress) === toLower(txDetails.from)) {
+          dispatch(dataAddNewTransaction(txDetails, null, false, provider));
+          txSavedInCurrentWallet = true;
+        }
       }
       analytics.track('Approved WalletConnect transaction request');
       if (requestId) {
         dispatch(removeRequest(requestId));
-        await dispatch(walletConnectSendStatus(peerId, requestId, result.hash));
+        await dispatch(
+          walletConnectSendStatus(peerId, requestId, { result: result.hash })
+        );
       }
       closeScreen(false);
+      // When the tx is sent from a different wallet,
+      // we need to switch to that wallet before saving the tx
+      if (!txSavedInCurrentWallet) {
+        InteractionManager.runAfterInteractions(async () => {
+          await switchToWalletWithAddress(txDetails.from);
+          dispatch(dataAddNewTransaction(txDetails, null, false, provider));
+        });
+      }
     } else {
       try {
         logger.sentry('Error with WC transaction. See previous logs...');
@@ -644,7 +683,7 @@ export default function TransactionConfirmationScreen() {
         // eslint-disable-next-line no-empty
       } catch (e) {}
 
-      await onCancel();
+      await onCancel(error);
     }
   }, [
     method,
@@ -663,11 +702,13 @@ export default function TransactionConfirmationScreen() {
     displayDetails?.request?.to,
     nativeAsset,
     dappName,
+    accountAddress,
     dispatch,
     dataAddNewTransaction,
     removeRequest,
     walletConnectSendStatus,
     peerId,
+    switchToWalletWithAddress,
     onCancel,
     dappScheme,
     dappUrl,
@@ -677,7 +718,7 @@ export default function TransactionConfirmationScreen() {
 
   const handleSignMessage = useCallback(async () => {
     let message = null;
-    let flatFormatSignature = null;
+    let response = null;
     if (isSignFirstParamType(method)) {
       message = params?.[0];
     } else if (isSignSecondParamType(method)) {
@@ -690,38 +731,30 @@ export default function TransactionConfirmationScreen() {
     );
     switch (method) {
       case SIGN:
-        flatFormatSignature = await signMessage(message, existingWallet);
+        response = await signMessage(message, existingWallet);
         break;
       case PERSONAL_SIGN:
-        flatFormatSignature = await signPersonalMessage(
-          message,
-          existingWallet
-        );
+        response = await signPersonalMessage(message, existingWallet);
         break;
       case SIGN_TYPED_DATA:
-        flatFormatSignature = await signTypedDataMessage(
-          message,
-          existingWallet
-        );
+        response = await signTypedDataMessage(message, existingWallet);
         break;
       default:
         break;
     }
-
-    if (flatFormatSignature) {
+    const { result, error } = response;
+    if (result) {
       analytics.track('Approved WalletConnect signature request');
       if (requestId) {
         dispatch(removeRequest(requestId));
-        await dispatch(
-          walletConnectSendStatus(peerId, requestId, flatFormatSignature)
-        );
+        await dispatch(walletConnectSendStatus(peerId, requestId, response));
       }
       if (callback) {
-        callback({ sig: flatFormatSignature });
+        callback({ sig: result });
       }
       closeScreen(false);
     } else {
-      await onCancel();
+      await onCancel(error);
     }
   }, [
     accountInfo.address,
@@ -732,10 +765,10 @@ export default function TransactionConfirmationScreen() {
     onCancel,
     params,
     peerId,
-    provider,
     removeRequest,
     requestId,
     walletConnectSendStatus,
+    provider,
   ]);
 
   const onConfirm = useCallback(async () => {
@@ -790,7 +823,7 @@ export default function TransactionConfirmationScreen() {
         <SheetActionButton
           color={colors.white}
           label="Cancel"
-          onPress={onCancel}
+          onPress={onPressCancel}
           size="big"
           textColor={colors.alpha(colors.blueGreyDark, 0.8)}
           weight="bold"
@@ -813,6 +846,7 @@ export default function TransactionConfirmationScreen() {
     nativeAsset?.symbol,
     onCancel,
     onPressSend,
+    onPressCancel,
   ]);
 
   const renderTransactionSection = useCallback(() => {

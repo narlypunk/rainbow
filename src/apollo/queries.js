@@ -55,7 +55,6 @@ export const UNISWAP_PAIR_DATA_QUERY = (pairAddress, block) => {
       totalSupply
       trackedReserveETH
       volumeUSD
-      untrackedVolumeUSD
   }
   query pairs {
     pairs(${
@@ -109,7 +108,6 @@ export const UNISWAP_PAIRS_BULK_QUERY = gql`
     totalSupply
     trackedReserveETH
     volumeUSD
-    untrackedVolumeUSD
   }
   query pairs($allPairs: [Bytes]!) {
     pairs(
@@ -144,7 +142,6 @@ export const UNISWAP_PAIRS_HISTORICAL_BULK_QUERY = gql`
       token1 {
         derivedETH
       }
-      untrackedVolumeUSD
     }
   }
 `;
@@ -204,14 +201,20 @@ export const UNISWAP_PRICES_QUERY = gql`
 `;
 
 export const UNISWAP_ALL_TOKENS = gql`
-  query tokens($first: Int!, $lastId: String!) {
-    tokens(first: $first, where: { id_gt: $lastId }) {
+  query tokens($first: Int!, $lastUSDVolume: String!) {
+    tokens(
+      first: $first
+      orderBy: tradeVolumeUSD
+      orderDirection: desc
+      where: { tradeVolumeUSD_lte: $lastUSDVolume }
+    ) {
       id
       derivedETH
       name
       symbol
       decimals
       totalLiquidity
+      tradeVolumeUSD
     }
   }
 `;
@@ -372,11 +375,7 @@ export const ENS_SUGGESTIONS = gql`
   query lookup($name: String!, $amount: Int!) {
     domains(
       first: $amount
-      where: {
-        name_contains: $name
-        resolvedAddress_not: null
-        name_ends_with: ".eth"
-      }
+      where: { name_contains: $name, resolvedAddress_not: null }
     ) {
       name
       resolver {
